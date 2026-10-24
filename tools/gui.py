@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Small window around cup0.py / sndg.py / cupicon.py: browse the cups, add GameBanana tracks and cups, set a cup icon.  python tools/gui.py"""
-import os, re, subprocess, sys, threading, tkinter as tk
+import os, queue, re, subprocess, sys, threading, tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
@@ -12,7 +12,7 @@ TAGS = ['', '3DS', 'Wii', 'N64', 'GBA', 'SNES', 'DS', 'GCN', 'Tour']
 
 class App(tk.Tk):
     def __init__(self):
-        super().__init__(); self.title('MK8 CTGP-Café – cups & tracks'); self.geometry('1240x720')
+        super().__init__(); self.q = queue.Queue(); self.title('MK8 CTGP-Café – cups & tracks'); self.geometry('1240x720')
         self.content = tk.StringVar(value=CEMU_DEFAULT if os.path.isdir(CEMU_DEFAULT) else '')
         self.base = tk.StringVar(); self.src = tk.StringVar(); self.name = tk.StringVar(); self.tag = tk.StringVar()
         self.mode = tk.StringVar(value='slot'); self.newcup = tk.StringVar(); self.extras = tk.BooleanVar(value=True)
@@ -20,9 +20,10 @@ class App(tk.Tk):
         top = ttk.Frame(self, padding=6); top.pack(fill='x')
         self.row(top, '1. Game content folder: the one that contains data.cup0 (Cemu: mlc01/usr/title/0005000e/1010ed00/content)', self.content, 0, self.pick_dir)
         self.row(top, '2. Original game content folder (optional): lets the tool check the music labels', self.base, 1, self.pick_dir)
+        self.log = tk.Text(self, height=7); self.log.pack(side='bottom', fill='x', padx=6, pady=6)
         body = ttk.Frame(self, padding=6); body.pack(fill='both', expand=True)
         left = ttk.LabelFrame(body, text='Cups', padding=4); left.pack(side='left', fill='both', expand=True)
-        self.tree = ttk.Treeview(left, columns=('dir', 'tag'), height=18); self.tree.pack(fill='both', expand=True, side='left'); self.tree.bind('<Double-1>', lambda e: self.edit_cup())
+        self.tree = ttk.Treeview(left, columns=('dir', 'tag'), height=14); self.tree.pack(fill='both', expand=True, side='left'); self.tree.bind('<Double-1>', lambda e: self.edit_cup())
         self.tree.heading('#0', text='cup / slot'); self.tree.heading('dir', text='folder'); self.tree.heading('tag', text='tag')
         self.tree.column('#0', width=280); self.tree.column('dir', width=170); self.tree.column('tag', width=50)
         sb = ttk.Scrollbar(left, command=self.tree.yview); sb.pack(side='right', fill='y'); self.tree.config(yscrollcommand=sb.set)
@@ -44,8 +45,7 @@ class App(tk.Tk):
         self.info = ttk.Label(right, wraplength=440, justify='left'); self.info.pack(anchor='w', pady=(0, 6))
         ttk.Button(right, text='Edit the selected cup (name, tracks, tags)...', command=self.edit_cup).pack(anchor='w')
         ttk.Button(right, text='Refresh list', command=self.refresh).pack(anchor='w', pady=4)
-        self.log = tk.Text(self, height=9); self.log.pack(fill='x', padx=6, pady=6)
-        self.refresh()
+        self.refresh(); self.pump()
 
     def row(self, parent, label, var, r, browse=None, hint=''):
         ttk.Label(parent, text=label).grid(row=r * 2, column=0, columnspan=3, sticky='w', pady=(4, 0))
@@ -61,7 +61,16 @@ class App(tk.Tk):
     def pick_file(self, var):
         f = filedialog.askopenfilename();  f and var.set(f)
 
-    def say(self, s): self.after(0, lambda: (self.log.insert('end', s + '\n'), self.log.see('end')))
+    def say(self, s): self.q.put(s)                     # called from worker threads; the main loop shows it
+
+    def pump(self):
+        try:
+            while True:
+                s = self.q.get_nowait()
+                if s is None: self.refresh()
+                else: self.log.insert('end', s + '\n'); self.log.see('end')
+        except queue.Empty: pass
+        self.after(150, self.pump)
 
     def refresh(self):
         self.tree.delete(*self.tree.get_children())
@@ -117,7 +126,7 @@ class App(tk.Tk):
             try: fn()
             except SystemExit as e: self.say('error: %s' % e)
             except Exception as e: self.say('error: %r' % e)
-            self.after(0, self.refresh)
+            self.q.put(None)
         threading.Thread(target=go, daemon=True).start()
 
     def add_track(self):
@@ -130,6 +139,9 @@ class App(tk.Tk):
         else:
             if c is None or s is None: return messagebox.showwarning('select a slot', 'select a slot of a cup in the list')
             cmd += ['--cup', str(c), '--slot', str(s)]
+        d = 'Gu_' + (re.sub(r'[^A-Za-z0-9]', '', name) or 'Track'); base_d, n = d, 2
+        while os.path.exists(os.path.join(content, 'course', d)): d = '%s%d' % (base_d, n); n += 1
+        cmd += ['--dir', d]                                  # never reuse the archive's folder name: it may belong to a track of the pack
         if self.picture.get(): cmd += ['--picture', self.picture.get()]
         if self.extras.get(): cmd += ['--extras', 'mapobj,audio']
         def work():
