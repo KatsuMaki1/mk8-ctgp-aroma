@@ -95,7 +95,7 @@ def import_course(course_dir, content, new_dir, picture, force):
     return pic
 
 
-def import_extras(tree, content, kinds, overwrite=False):
+def import_extras(tree, content, kinds, overwrite=False, course=None):
     """copy <...>/content/<kind>/** (e.g. mapobj sky boxes, audio streams) from an archive tree into the content dir; ignores 'Extras' folders.
     Files that already exist are KEPT unless overwrite=True: mapobj files are shared by every course, so an import must not replace a sky or
     object another track (or the game) relies on."""
@@ -108,6 +108,10 @@ def import_extras(tree, content, kinds, overwrite=False):
                 for dp, _, fs in os.walk(src):
                     for f in fs:
                         rel = os.path.relpath(os.path.join(dp, f), root); dst = os.path.join(content, rel)
+                        parts = rel.replace(os.sep, '/').split('/')
+                        if course and parts[0] == 'mapobj' and len(parts) == 3 and parts[1].startswith('VR') and f.endswith('.bfres'):
+                            try: __import__('skies').isolate(content, course, parts[1], os.path.join(dp, f)); n += 1; continue   # a sky: private copy per track
+                            except SystemExit as e: print('sky %s kept shared (%s)' % (parts[1], e))
                         if os.path.exists(dst) and not overwrite: skipped.append(rel.replace(os.sep, '/')); continue
                         os.makedirs(os.path.dirname(dst), exist_ok=True); shutil.copy2(os.path.join(dp, f), dst); n += 1
     print('extras copied: %d files (%s)' % (n, ', '.join(kinds)))
@@ -141,7 +145,7 @@ def main():
         if not re.fullmatch(r'G[A-Za-z0-9_]+', new_dir): sys.exit('--dir must start with G and use letters/digits/underscore')
         if any(t.dir == new_dir for c in cups for t in c.tracks) and not a.force: sys.exit('%s is already used in data.cup0' % new_dir)
         pic = import_course(found[src_name], a.content, new_dir, a.picture, a.force)
-        if a.extras: import_extras(a.course if os.path.isdir(a.course) else tmp, a.content, [k for k in a.extras.split(',') if k], a.overwrite_extras)
+        if a.extras: import_extras(a.course if os.path.isdir(a.course) else tmp, a.content, [k for k in a.extras.split(',') if k], a.overwrite_extras, new_dir)
     track = Track(new_dir, pic, a.name, a.tag)
     if a.new_cup:
         custom = [c for c in cups if c.type == 2]
