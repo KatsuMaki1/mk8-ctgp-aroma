@@ -32,7 +32,7 @@ class App(tk.Tk):
         self.row(add, 'Name shown in the game (you can type it)', self.name, 1)
         ttk.Label(add, text='Origin tag (small label next to the name, optional)').grid(row=4, column=0, columnspan=3, sticky='w', pady=(4, 0)); ttk.Combobox(add, textvariable=self.tag, values=TAGS, width=8).grid(row=5, column=0, sticky='w')
         self.row(add, 'Preview picture of the track (.bflim, optional - a placeholder is used otherwise)', self.picture, 3, self.pick_file)
-        ttk.Radiobutton(add, text='Put it in the slot I selected in the list on the left (CTGP cups only)', variable=self.mode, value='slot').grid(row=8, column=0, columnspan=3, sticky='w', pady=(8, 0))
+        ttk.Radiobutton(add, text='Put it in the slot I selected in the list on the left (any cup)', variable=self.mode, value='slot').grid(row=8, column=0, columnspan=3, sticky='w', pady=(8, 0))
         ttk.Radiobutton(add, text='Create a new cup named:', variable=self.mode, value='cup').grid(row=9, column=0, sticky='w')
         ttk.Entry(add, textvariable=self.newcup, width=22).grid(row=9, column=1, columnspan=2, sticky='w')
         ttk.Checkbutton(add, text='copy sky boxes / music from the archive', variable=self.extras).grid(row=10, column=0, columnspan=3, sticky='w')
@@ -76,13 +76,13 @@ class App(tk.Tk):
 
     def edit_cup(self):
         c, _ = self.selected()
-        if c is None or self.cups[c].type != 2: return messagebox.showwarning('select a cup', 'select a CTGP cup (or one of its slots) in the list')
+        if c is None: return messagebox.showwarning('select a cup', 'select a cup (or one of its slots) in the list')
         cup, content = self.cups[c], self.content.get()
-        dirs = sorted(d for d in os.listdir(os.path.join(content, 'course')) if os.path.isdir(os.path.join(content, 'course', d)) and d.startswith('G'))
+        dirs = ['Ginvalid'] + sorted(d for d in os.listdir(os.path.join(content, 'course')) if os.path.isdir(os.path.join(content, 'course', d)) and d.startswith('G'))
         pics = ['custom/' + f for f in sorted(os.listdir(os.path.join(content, 'custom'))) if f.startswith('cPict_')] if os.path.isdir(os.path.join(content, 'custom')) else []
         w = tk.Toplevel(self); w.title('Edit cup'); w.transient(self); pad = dict(padx=4, pady=2)
         name = tk.StringVar(value=cup.name); ttk.Label(w, text='Cup name').grid(row=0, column=0, sticky='w', **pad); ttk.Entry(w, textvariable=name, width=40).grid(row=0, column=1, columnspan=3, sticky='w', **pad)
-        for i, h in enumerate(('Slot', 'Track name shown', 'Tag', 'Course folder (from your imported tracks)', 'Preview picture')): ttk.Label(w, text=h, font=('', 9, 'bold')).grid(row=1, column=i, sticky='w', **pad)
+        for i, h in enumerate(('Slot', 'Track name shown', 'Tag', 'Course folder (Ginvalid = the original DLC track)', 'Preview picture')): ttk.Label(w, text=h, font=('', 9, 'bold')).grid(row=1, column=i, sticky='w', **pad)
         rows = []
         for k, t in enumerate(cup.tracks):
             v = (tk.StringVar(value=t.name), tk.StringVar(value=t.tag), tk.StringVar(value=t.dir), tk.StringVar(value=t.picture))
@@ -119,7 +119,7 @@ class App(tk.Tk):
             if not self.newcup.get().strip(): return messagebox.showwarning('missing', 'give the new cup a name')
             cmd += ['--new-cup', self.newcup.get().strip()]
         else:
-            if c is None or s is None or self.cups[c].type != 2: return messagebox.showwarning('select a slot', 'select a slot of a CTGP cup (not a game DLC cup) in the list')
+            if c is None or s is None: return messagebox.showwarning('select a slot', 'select a slot of a cup in the list')
             cmd += ['--cup', str(c), '--slot', str(s)]
         if self.picture.get(): cmd += ['--picture', self.picture.get()]
         if self.extras.get(): cmd += ['--extras', 'mapobj,audio']
