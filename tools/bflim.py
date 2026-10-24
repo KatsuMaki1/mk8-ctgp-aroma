@@ -6,7 +6,7 @@ import struct
 import numpy as np
 from PIL import Image
 
-FMT = {5: ('RGB565', 16), 9: ('RGBA8', 32)}          # BFLIM format id -> (name, bits per pixel)
+FMT = {5: ('RGB565 (little endian)', 16), 9: ('RGBA8', 32)}   # BFLIM format id -> (name, bits per pixel)
 PIPES, BANKS, INTERLEAVE_BITS = 2, 4, 8
 
 
@@ -69,7 +69,7 @@ def swizzle_candidates(f):
     return [(p, b) for b in range(4) for p in range(2)]
 
 
-def decode(raw, swz=None):
+def decode(raw, swz=(0, 0)):
     """-> (PIL RGBA image, swizzle used)"""
     f = footer(raw); name, bpp = FMT[f['fmt']]
     pitch, height = surface_dims(f['w'], f['h'], bpp, f['tile'])
@@ -81,7 +81,7 @@ def decode(raw, swz=None):
             for x in range(f['w']):
                 o = addr_2d_thin1(x, y, bpp, pitch, p, b) if f['tile'] == 4 else addr_1d_thin1(x, y, bpp, pitch)
                 if bpp == 16:
-                    v = (data[o] << 8) | data[o + 1]
+                    v = (data[o + 1] << 8) | data[o]                      # 16-bit units are stored little endian
                     px[y, x] = (((v >> 11) & 31) * 255 // 31, ((v >> 5) & 63) * 255 // 63, (v & 31) * 255 // 31, 255)
                 else:
                     px[y, x] = tuple(data[o:o + 4])
@@ -89,3 +89,30 @@ def decode(raw, swz=None):
         if best is None or d < best[0]: best = (d, px, (p, b))
         if swz: break
     return Image.fromarray(best[1], 'RGBA'), best[2]
+
+
+def decode_raw565(raw):
+    """-> (h, w) uint16 array of the original RGB565 values (exact, no float conversion)"""
+    f = footer(raw); assert FMT[f['fmt']][1] == 16 and f['tile'] == 4
+    pitch, _ = surface_dims(f['w'], f['h'], 16, 4); data = raw[:f['size']]
+    out = np.zeros((f['h'], f['w']), dtype=np.uint16)
+    for y in range(f['h']):
+        for x in range(f['w']):
+            o = addr_2d_thin1(x, y, 16, pitch, 0, 0); out[y, x] = (data[o + 1] << 8) | data[o]
+    return out
+
+
+def encode_raw565(vals, template):
+    """16-bit RGB565 array -> BFLIM bytes, reusing the template's footer (size/format/alignment)"""
+    f = footer(template); pitch, _ = surface_dims(f['w'], f['h'], 16, 4)
+    assert vals.shape == (f['h'], f['w'])
+    buf = bytearray(f['size'])
+    for y in range(f['h']):
+        for x in range(f['w']):
+            o = addr_2d_thin1(x, y, 16, pitch, 0, 0); v = int(vals[y, x]); buf[o] = v & 0xFF; buf[o + 1] = v >> 8
+    return bytes(buf) + template[-0x28:]
+
+
+def rgb_to_565(img):
+    a = np.array(img.convert('RGB')).astype(np.uint16)
+    return ((a[..., 0] >> 3) << 11) | ((a[..., 1] >> 2) << 5) | (a[..., 2] >> 3)
