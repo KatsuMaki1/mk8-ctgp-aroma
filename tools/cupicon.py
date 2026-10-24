@@ -54,7 +54,9 @@ if __name__ == '__main__':
 import struct
 
 ANIM = 'anim/mn_L_CupSlctBtn_00_IconChange.bflan'      # texture-pattern animation of the cup button: frame N -> icon texture
-FIRST_CTGP_FRAME = 24                                  # frames 24..29 = CTGP icon slots 0..5 (cup0 `icon` field)
+def icon_frame(idx):
+    """cup0 `icon` 0..5 -> animation frame; verified in game: 0,1,2 -> 24,25,26 but 3,4,5 -> 29,28,27"""
+    return 24 + idx if idx < 3 else 32 - idx
 
 
 def bflan_set_icon(anim, tex_name, frame):
@@ -95,7 +97,7 @@ def install_icon(ctgp_szs, out_szs, bflim_data, icon_idx, name):
     aligns[tex] = max(0x20, bflim.footer(bflim_data)['align'])
     names = dict(files); base_anim = names[ANIM]
     if (name + '^h.bflim').encode() in base_anim: raise SystemExit('this icon name is already in the animation; use another name or start from the original ctgp.szs')
-    names[ANIM] = bflan_set_icon(base_anim, name + '^h.bflim', FIRST_CTGP_FRAME + icon_idx)
+    names[ANIM] = bflan_set_icon(base_anim, name + '^h.bflim', icon_frame(icon_idx))
     out = szs.sarc_write(list(names.items()), aligns, ver)
     open(out_szs, 'wb').write(szs.yaz0_store(out))
     return len(out)
