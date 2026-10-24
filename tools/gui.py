@@ -22,7 +22,7 @@ class App(tk.Tk):
         self.row(top, '2. Original game content folder (optional): lets the tool check the music labels', self.base, 1, self.pick_dir)
         body = ttk.Frame(self, padding=6); body.pack(fill='both', expand=True)
         left = ttk.LabelFrame(body, text='Cups', padding=4); left.pack(side='left', fill='both', expand=True)
-        self.tree = ttk.Treeview(left, columns=('dir', 'tag'), height=18); self.tree.pack(fill='both', expand=True, side='left')
+        self.tree = ttk.Treeview(left, columns=('dir', 'tag'), height=18); self.tree.pack(fill='both', expand=True, side='left'); self.tree.bind('<Double-1>', lambda e: self.edit_cup())
         self.tree.heading('#0', text='cup / slot'); self.tree.heading('dir', text='folder'); self.tree.heading('tag', text='tag')
         self.tree.column('#0', width=280); self.tree.column('dir', width=170); self.tree.column('tag', width=50)
         sb = ttk.Scrollbar(left, command=self.tree.yview); sb.pack(side='right', fill='y'); self.tree.config(yscrollcommand=sb.set)
@@ -42,7 +42,7 @@ class App(tk.Tk):
         ttk.Label(ico, text='Select a CTGP cup in the list on the left first.').grid(row=0, column=0, columnspan=3, sticky='w'); self.row(ico, 'Picture for the middle of the icon (PNG with a transparent background)', self.emblem, 1, self.pick_file)
         ttk.Button(ico, text='Make the blue medallion icon and install it', command=self.set_icon).grid(row=6, column=0, sticky='w', pady=4)
         self.info = ttk.Label(right, wraplength=440, justify='left'); self.info.pack(anchor='w', pady=(0, 6))
-        ttk.Button(right, text='Rename the selected cup...', command=self.rename_cup).pack(anchor='w')
+        ttk.Button(right, text='Edit the selected cup (name, tracks, tags)...', command=self.edit_cup).pack(anchor='w')
         ttk.Button(right, text='Refresh list', command=self.refresh).pack(anchor='w', pady=4)
         self.log = tk.Text(self, height=9); self.log.pack(fill='x', padx=6, pady=6)
         self.refresh()
@@ -74,14 +74,30 @@ class App(tk.Tk):
             n = self.tree.insert('', 'end', iid='c%d' % i, text='%2d  %s%s' % (i, c.name, '' if c.type == 2 else '  (game DLC)'), open=c.type == 2)
             for k, t in enumerate(c.tracks): self.tree.insert(n, 'end', iid='c%d_%d' % (i, k), text='slot %d  %s' % (k, t.name or '(game)'), values=(t.dir, t.tag))
 
-    def rename_cup(self):
-        from tkinter import simpledialog
+    def edit_cup(self):
         c, _ = self.selected()
-        if c is None or self.cups[c].type != 2: return messagebox.showwarning('select a cup', 'select a CTGP cup in the list')
-        n = simpledialog.askstring('Rename cup', 'New name for "%s":' % self.cups[c].name, initialvalue=self.cups[c].name)
-        if n:
-            p = os.path.join(self.content.get(), 'data.cup0'); open(p + '.bak', 'wb').write(open(p, 'rb').read())
-            self.cups[c].name = n; open(p, 'wb').write(cup0.build(self.cups)); self.say('cup renamed to "%s"; restart Cemu' % n); self.refresh()
+        if c is None or self.cups[c].type != 2: return messagebox.showwarning('select a cup', 'select a CTGP cup (or one of its slots) in the list')
+        cup, content = self.cups[c], self.content.get()
+        dirs = sorted(d for d in os.listdir(os.path.join(content, 'course')) if os.path.isdir(os.path.join(content, 'course', d)) and d.startswith('G'))
+        pics = ['custom/' + f for f in sorted(os.listdir(os.path.join(content, 'custom'))) if f.startswith('cPict_')] if os.path.isdir(os.path.join(content, 'custom')) else []
+        w = tk.Toplevel(self); w.title('Edit cup'); w.transient(self); pad = dict(padx=4, pady=2)
+        name = tk.StringVar(value=cup.name); ttk.Label(w, text='Cup name').grid(row=0, column=0, sticky='w', **pad); ttk.Entry(w, textvariable=name, width=40).grid(row=0, column=1, columnspan=3, sticky='w', **pad)
+        for i, h in enumerate(('Slot', 'Track name shown', 'Tag', 'Course folder (from your imported tracks)', 'Preview picture')): ttk.Label(w, text=h, font=('', 9, 'bold')).grid(row=1, column=i, sticky='w', **pad)
+        rows = []
+        for k, t in enumerate(cup.tracks):
+            v = (tk.StringVar(value=t.name), tk.StringVar(value=t.tag), tk.StringVar(value=t.dir), tk.StringVar(value=t.picture))
+            ttk.Label(w, text='slot %d' % k).grid(row=2 + k, column=0, **pad); ttk.Entry(w, textvariable=v[0], width=28).grid(row=2 + k, column=1, **pad)
+            ttk.Combobox(w, textvariable=v[1], values=TAGS, width=7).grid(row=2 + k, column=2, **pad)
+            ttk.Combobox(w, textvariable=v[2], values=dirs, width=26).grid(row=2 + k, column=3, **pad); ttk.Combobox(w, textvariable=v[3], values=pics, width=34).grid(row=2 + k, column=4, **pad); rows.append(v)
+        ttk.Label(w, text='To add a track that is not in the folder list yet, use "Add the track" first, then pick it here for other slots.').grid(row=6, column=0, columnspan=5, sticky='w', **pad)
+        def save():
+            for t, v in zip(cup.tracks, rows):
+                if not v[2].get().strip(): return messagebox.showwarning('missing', 'every slot needs a course folder', parent=w)
+                t.name, t.tag, t.dir, t.picture = v[0].get().strip(), v[1].get(), v[2].get().strip(), v[3].get().strip()
+            cup.name = name.get().strip() or cup.name
+            p = os.path.join(content, 'data.cup0'); open(p + '.bak', 'wb').write(open(p, 'rb').read()); open(p, 'wb').write(cup0.build(self.cups))
+            self.say('cup "%s" saved; restart Cemu' % cup.name); w.destroy(); self.refresh()
+        ttk.Button(w, text='Save', command=save).grid(row=7, column=0, **pad); ttk.Button(w, text='Cancel', command=w.destroy).grid(row=7, column=1, sticky='w', **pad)
 
     def selected(self):
         s = self.tree.selection(); m = re.fullmatch(r'c(\d+)(?:_(\d))?', s[0]) if s else None
