@@ -168,3 +168,22 @@ def encode_bc1(img, template, swz=None):
             o = addr_2d_thin1(bx, by, 64, pitch, *swz) if f['tile'] == 4 else (by * pitch + bx) * 8
             buf[o:o + 8] = struct.pack('<HHI', c0, c1, idx)
     return bytes(buf) + template[-0x28:]
+
+
+def encode_rgba8(img, template):
+    """RGBA PIL image -> RGBA8 BFLIM bytes (template: an existing RGBA8 BFLIM of the same size, e.g. ym_Coin_00^l; gives footer + swizzle)"""
+    f = footer(template); assert f['fmt'] == 20 and f['tile'] == 4
+    pitch, _ = surface_dims(f['w'], f['h'], 32, 4); s = f['swizzle_bits']; sw = (s & 1, s >> 1)
+    a = np.array(img.convert('RGBA').resize((f['w'], f['h']), Image.LANCZOS)); buf = bytearray(f['size'])
+    for y in range(f['h']):
+        for x in range(f['w']):
+            o = addr_2d_thin1(x, y, 32, pitch, *sw); buf[o:o + 4] = bytes(a[y, x])
+    return bytes(buf) + template[-0x28:]
+
+
+def decode_rgba8(raw):
+    f = footer(raw); assert f['fmt'] == 20
+    pitch, _ = surface_dims(f['w'], f['h'], 32, 4); s = f['swizzle_bits']; sw = (s & 1, s >> 1); out = np.zeros((f['h'], f['w'], 4), np.uint8)
+    for y in range(f['h']):
+        for x in range(f['w']): o = addr_2d_thin1(x, y, 32, pitch, *sw); out[y, x] = list(raw[o:o + 4])
+    return Image.fromarray(out, 'RGBA')
