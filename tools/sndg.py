@@ -53,6 +53,39 @@ def relabel(content, course, old, new):
     open(path, 'wb').write(szs.sarc_write(files, szs.sarc_aligns(raw, 0x20), ver)); print('%s: label %s -> %s (%d places)' % (course, old, new, hits))
 
 
+def course_labels(content, course):
+    """music labels (pBGM_*) named in the course's _param.bin"""
+    raw = open(os.path.join(content, 'course', course, 'SNDG_%s.bars' % course), 'rb').read()
+    for name, data, _, _ in szs.sarc_info(raw)[0]:
+        if name == '_param.bin': return sorted({m.decode() for m in re.findall(rb'pBGM_\w+', data)})
+    return []
+
+
+def auto_music(content, course, base_bfsar=None, log=print):
+    """make an imported course use its own stream files and a label the base game knows:
+    1. stream names -> unique pBGM_CT_<course>... (same length, so the vanilla course keeps its music), 2. labels missing from the base
+    game's turbo_sound.bfsar (DLC music) -> pBGM_WU_DESERT_N/_F. Returns the list of things done."""
+    import zlib
+    done = []
+    labels = [l for l in course_labels(content, course) if l.endswith(('_N', '_F'))]
+    stems = sorted({l[:-2] for l in labels})
+    known = open(base_bfsar, 'rb').read(0x60000) if base_bfsar and os.path.exists(base_bfsar) else None
+    for stem in stems:
+        if len(stem) >= 13 and not stem.startswith('pBGM_CT_'):
+            tag = re.sub(r'[^A-Z0-9]', '', course.upper())
+            new = ('pBGM_CT_' + tag)[:len(stem) - 4] + '%04X' % (zlib.crc32(course.encode()) & 0xFFFF)
+            new = new.ljust(len(stem), 'X')[:len(stem)]
+            rename_music(content, course, stem, new); done.append('streams %s -> %s' % (stem, new))
+        if known is not None:
+            for suf in ('_N', '_F'):
+                if stem + suf in labels and (stem + suf).encode() + bytes(1) not in known:
+                    if len(stem) < len('pBGM_WU_DESERT'): done.append('label %s%s has no entry in the base game: kept (too short to relabel)' % (stem, suf)); continue
+                    relabel(content, course, stem + suf, 'pBGM_WU_DESERT' + suf); done.append('label %s%s -> pBGM_WU_DESERT%s' % (stem, suf, suf))
+    for d in done: log(d)
+    if not stems: log('no music labels found in %s (nothing to do)' % course)
+    return done
+
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('cmd', choices=['rename-music', 'relabel']); ap.add_argument('--content', required=True)
