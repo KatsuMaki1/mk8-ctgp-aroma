@@ -41,7 +41,9 @@ class App(tk.Tk):
         ico = ttk.LabelFrame(right, text='Cup icon (selected CTGP cup)', padding=6); ico.pack(fill='x', pady=8)
         ttk.Label(ico, text='Select a CTGP cup in the list on the left first.').grid(row=0, column=0, columnspan=3, sticky='w'); self.row(ico, 'Picture for the middle of the icon (PNG with a transparent background)', self.emblem, 1, self.pick_file)
         ttk.Button(ico, text='Make the blue medallion icon and install it', command=self.set_icon).grid(row=6, column=0, sticky='w', pady=4)
-        ttk.Button(right, text='Refresh list', command=self.refresh).pack(anchor='w')
+        self.info = ttk.Label(right, wraplength=440, justify='left'); self.info.pack(anchor='w', pady=(0, 6))
+        ttk.Button(right, text='Rename the selected cup...', command=self.rename_cup).pack(anchor='w')
+        ttk.Button(right, text='Refresh list', command=self.refresh).pack(anchor='w', pady=4)
         self.log = tk.Text(self, height=9); self.log.pack(fill='x', padx=6, pady=6)
         self.refresh()
 
@@ -66,9 +68,20 @@ class App(tk.Tk):
         p = os.path.join(self.content.get(), 'data.cup0')
         if not os.path.exists(p): return
         self.cups = cup0.parse(open(p, 'rb').read())
+        used = sum(c.type == 2 for c in self.cups)
+        self.info.config(text='CTGP only supports %d custom cups and %d are used%s. To get another cup, put your tracks in the slots of an existing one (select a slot, then "Add the track"); a cup always has 4 slots.' % (6, used, ' (full)' if used >= 6 else ''))
         for i, c in enumerate(self.cups):
             n = self.tree.insert('', 'end', iid='c%d' % i, text='%2d  %s%s' % (i, c.name, '' if c.type == 2 else '  (game DLC)'), open=c.type == 2)
             for k, t in enumerate(c.tracks): self.tree.insert(n, 'end', iid='c%d_%d' % (i, k), text='slot %d  %s' % (k, t.name or '(game)'), values=(t.dir, t.tag))
+
+    def rename_cup(self):
+        from tkinter import simpledialog
+        c, _ = self.selected()
+        if c is None or self.cups[c].type != 2: return messagebox.showwarning('select a cup', 'select a CTGP cup in the list')
+        n = simpledialog.askstring('Rename cup', 'New name for "%s":' % self.cups[c].name, initialvalue=self.cups[c].name)
+        if n:
+            p = os.path.join(self.content.get(), 'data.cup0'); open(p + '.bak', 'wb').write(open(p, 'rb').read())
+            self.cups[c].name = n; open(p, 'wb').write(cup0.build(self.cups)); self.say('cup renamed to "%s"; restart Cemu' % n); self.refresh()
 
     def selected(self):
         s = self.tree.selection(); m = re.fullmatch(r'c(\d+)(?:_(\d))?', s[0]) if s else None
