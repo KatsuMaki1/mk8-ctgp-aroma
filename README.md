@@ -72,7 +72,7 @@ The course is copied to `course/<dir>/` (default `Gu_<Name>`; sound banks named 
 (`data.cup0.bak` is kept). `selftest` proves the parser/writer reproduces the original file byte for byte.
 Music: tracks from GameBanana usually ship their stream files (`audio/stream/pBGM_<NAME>_N/_F.bfstm`) under the name of the vanilla course they replace.
 `--extras mapobj,audio` copies them, and `tools/sndg.py rename-music --content <dir> --course Gu_MyTrack --old pBGM_WII_WARIOSMINE --new pBGM_CT_CHOCOISLAND`
-renames them (same length) inside the course's `SNDG_<dir>.bars` and in `audio/stream`, so the original course keeps its own music.
+renames the stream files (same length) in `audio/stream` and their paths inside the course's `SNDG_<dir>.bars`, so the original course keeps its own music. The music *label* (e.g. `pBGM_WII_WARIOSMINE`) must stay a name that exists in the game's `turbo_sound.bfsar`; the game plays whatever stream file the course's own `.bars` names (verified in Cemu), so sharing a label with the vanilla course is harmless.
 Sky boxes (`mapobj/VR*`) cannot be renamed that simply and still replace the vanilla ones.
 
 Limits, which come from the CTGP code: 6 CTGP cups of 4 tracks (the release uses 5, so one cup is free), the 12 DLC cups can be replaced slot by slot,

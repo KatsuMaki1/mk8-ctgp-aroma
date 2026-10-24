@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Give a custom course its own music names so it no longer overrides the music of the original course it was made for.
+"""Give a custom course its own music FILES so it no longer overrides the music of the original course it was made for.
 
   sndg.py rename-music --content <dir with course/ and audio/> --course Gu_MyTrack --old pBGM_WII_WARIOSMINE --new pBGM_CT_CHOCOISLAND
 
-A course's SNDG_<dir>.bars is a SARC with the prefetch streams (<name>_N/_F.bfstp), sound effects and a `_param.bin` that names the music;
-the full streams are audio/stream/<name>_N/_F.bfstm. The new base name must have the SAME length as the old one (the names are strings in a
-fixed layout inside _param.bin). Streams found in <content>/audio/stream are renamed; nothing is touched if they are absent.
+A course's SNDG_<dir>.bars is a SARC with the prefetch streams (<name>_N/_F.bfstp), sound effects and a `_param.bin` that lists, per music label,
+the prefetch file and the full stream file (audio/stream/<name>_N/_F.bfstm). The game reads the stream path from that list, so only the .bfstm
+names are changed: the label itself (an existing name in turbo_sound.bfsar) and the .bfstp names stay as they are, and the course keeps playing
+its own music without touching the original course's. The new name must have the SAME length as the old one (fixed string layout).
 """
 import argparse, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -19,9 +20,8 @@ def rename_music(content, course, old, new):
     raw = open(path, 'rb').read(); info, _, ver = szs.sarc_info(raw)
     files, hits = [], 0
     for name, data, _, _ in info:
-        if old in name: name = name.replace(old, new); hits += 1
         if name == '_param.bin':
-            n = data.count(old.encode()); data = data.replace(old.encode(), new.encode()); hits += n
+            data, n = re.subn(rb'%s(\w*\.bfstm)' % re.escape(old.encode()), lambda m: new.encode() + m.group(1), data); hits += n
         files.append((name, data))
     if not hits: raise SystemExit('%s not found in %s' % (old, path))
     open(path + '.bak', 'wb').write(raw) if not os.path.exists(path + '.bak') else None
@@ -32,7 +32,7 @@ def rename_music(content, course, old, new):
         for ext in ('.bfstm',):
             src, dst = os.path.join(stream, old + suf + ext), os.path.join(stream, new + suf + ext)
             if os.path.exists(src): os.replace(src, dst); moved.append(os.path.basename(dst))
-    print('%s: %d name(s) renamed in the archive; streams renamed: %s' % (course, hits, ', '.join(moved) or 'none found'))
+    print('%s: %d stream path(s) renamed in the archive; stream files renamed: %s' % (course, hits, ', '.join(moved) or 'none found'))
 
 
 if __name__ == '__main__':
