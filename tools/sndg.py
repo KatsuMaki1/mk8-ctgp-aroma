@@ -8,7 +8,7 @@ the prefetch file and the full stream file (audio/stream/<name>_N/_F.bfstm). The
 names are changed: the label itself (an existing name in turbo_sound.bfsar) and the .bfstp names stay as they are, and the course keeps playing
 its own music without touching the original course's. The new name must have the SAME length as the old one (fixed string layout).
 """
-import argparse, os, re, sys
+import argparse, os, re, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import szs
 
@@ -51,6 +51,37 @@ def relabel(content, course, old, new):
     if not hits: raise SystemExit('%s not found in %s' % (old, path))
     if not os.path.exists(path + '.bak'): open(path + '.bak', 'wb').write(raw)
     open(path, 'wb').write(szs.sarc_write(files, szs.sarc_aligns(raw, 0x20), ver)); print('%s: label %s -> %s (%d places)' % (course, old, new, hits))
+
+
+def set_labels(content, course, mapping):
+    """replace music labels by names of ANY length: {'pBGM_WU_DESERT_N': 'pBGM_WU_RAINBOW_ROAD_N', ...}. The labels and their .bfstp names are strings in the
+    pool of _param.bin; the new strings are appended to the pool and every table word that pointed at an old one is re-pointed (the old text is left behind)."""
+    path = os.path.join(content, 'course', course, 'SNDG_%s.bars' % course)
+    raw = open(path, 'rb').read(); info, _, ver = szs.sarc_info(raw); files = []; nul = bytes(1); done = 0
+    for name, data, _, _ in info:
+        for old, new in mapping.items():
+            if name == old + '.bfstp': name = new + '.bfstp'
+        if name == '_param.bin':
+            data = bytearray(data); size, = struct.unpack('>I', data[8:12]); assert size == len(data), 'unexpected param.bin header'
+            tab, tab_end, pool = struct.unpack('>III', data[0x10:0x1C])[0], struct.unpack('>I', data[0x14:0x18])[0], struct.unpack('>I', data[0x18:0x1C])[0]
+            def sat(o): return bytes(data[pool + o:data.index(nul, pool + o)])
+            strings = {}                                   # pool offset -> text, for every string that starts at a string boundary
+            o = 0
+            while pool + o < len(data):
+                t = sat(o); strings[o] = t; o += len(t) + 1
+            new_blob = bytearray(); new_off = {}
+            for old, new in mapping.items():
+                for suf in (b'', b'.bfstp'):
+                    new_off[old.encode() + suf] = len(data) - pool + len(new_blob); new_blob += new.encode() + suf + nul
+            repoint = {off: new_off[t] for off, t in strings.items() if t in new_off}
+            for p in range(tab, pool, 4):                  # every aligned word of the table area
+                w, = struct.unpack('>I', data[p:p + 4])
+                if w in repoint: struct.pack_into('>I', data, p, repoint[w]); done += 1
+            data += new_blob; data += bytes(-len(data) % 4); struct.pack_into('>I', data, 8, len(data)); data = bytes(data)
+        files.append((name, data))
+    if not done: raise SystemExit('none of %s found in %s' % (', '.join(mapping), path))
+    if not os.path.exists(path + '.bak'): open(path + '.bak', 'wb').write(raw)
+    open(path, 'wb').write(szs.sarc_write(files, szs.sarc_aligns(raw, 0x20), ver)); print('%s: %d label reference(s) re-pointed' % (course, done)); return done
 
 
 def course_labels(content, course):
