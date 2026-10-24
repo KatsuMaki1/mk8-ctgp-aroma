@@ -58,6 +58,21 @@ Copy the CTGP `cafeloader/vol/<TitleID>/content` folder next to it (`sd:/cafeloa
 `mk8-ct.wps` in `wiiu/environments/aroma/plugins/`. Needs the Aroma ContentRedirection module.
 Debug switches (empty files in `sd:/wiiu/mk8-ct/`): `log_file`, `notif`, `no_code`, `no_content`, `skip_<dir>`.
 
+## Adding tracks (e.g. from GameBanana)
+
+`tools/cup0.py` edits CTGP-Caf�'s `data.cup0` and imports a course folder (a directory or a `.zip` containing a folder with `course_model.szs`):
+```
+python tools/cup0.py list --content <content dir>
+python tools/cup0.py add-track --content <content dir> --course SomeTrack.zip --name "Some Track" --tag DS --cup 14 --slot 0 --picture preview.bflim
+python tools/cup0.py add-track --content <content dir> --course Another.zip --name "Another" --new-cup "Banana Cup"
+```
+`<content dir>` is the folder that holds `data.cup0`: the update's `content/` for Cemu, `sd:/cafeloader/vol/<TitleID>/content` for the console plugin.
+The course is copied to `course/<dir>/` (default `Gu_<Name>`; sound banks named after the folder are renamed), a preview picture is copied to
+`custom/cPict_<dir>.bflim` (a placeholder if you give none: the tool does not convert PNG to BFLIM), and the slot of `data.cup0` is rewritten
+(`data.cup0.bak` is kept). `selftest` proves the parser/writer reproduces the original file byte for byte.
+Limits, which come from the CTGP code: 6 CTGP cups of 4 tracks (the release uses 5, so one cup is free), the 12 DLC cups can be replaced slot by slot,
+battle courses are hard-coded and cannot be added without editing the code. Tracks must be built for MK8 itself; some need extra `mapobj` files. Untested with real GameBanana archives.
+
 ## Credits
 CTGP-Café by RamboGlaz and contributors · CafeLoader by aboood40091 / AboodXD · Wii U Plugin System by Maschell and contributors.
 This project's own code is MIT licensed.
