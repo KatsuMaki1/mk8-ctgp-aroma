@@ -19,6 +19,9 @@ def _micro_index(x, y, bpp):
 
 
 def _micro_index_exact(x, y, bpp):
+    if bpp == 64:
+        b = [x & 1, y & 1, (x >> 1) & 1, (x >> 2) & 1, (y >> 1) & 1, (y >> 2) & 1]
+        return sum(v << i for i, v in enumerate(b))
     """pixel index inside an 8x8 micro tile (AddrLib _ComputePixelIndexWithinMicroTile, non-depth, thickness 1)"""
     if bpp == 16:
         b = [x & 1, (x >> 1) & 1, (x >> 2) & 1, y & 1, (y >> 1) & 1, (y >> 2) & 1]
@@ -116,3 +119,52 @@ def encode_raw565(vals, template):
 def rgb_to_565(img):
     a = np.array(img.convert('RGB')).astype(np.uint16)
     return ((a[..., 0] >> 3) << 11) | ((a[..., 1] >> 2) << 5) | (a[..., 2] >> 3)
+
+
+# ---- block compressed (BC1 / DXT1: 4x4 pixels in 8 bytes; one "element" = one block)
+def _bc1_geometry(f):
+    bw, bh = (f['w'] + 3) // 4, (f['h'] + 3) // 4
+    pitch = (bw + 31) // 32 * 32 if f['tile'] == 4 else bw
+    return bw, bh, pitch
+
+
+def decode_bc1(raw, swz=None):
+    """BC1 BFLIM -> PIL RGBA image"""
+    f = footer(raw); bw, bh, pitch = _bc1_geometry(f); data = raw[:f['size']]
+    swz = swz or (f['swizzle_bits'] & 1, f['swizzle_bits'] >> 1)
+    out = np.zeros((bh * 4, bw * 4, 4), dtype=np.uint8)
+    for by in range(bh):
+        for bx in range(bw):
+            o = addr_2d_thin1(bx, by, 64, pitch, *swz) if f['tile'] == 4 else (by * pitch + bx) * 8
+            c0, c1, idx = struct.unpack('<HHI', data[o:o + 8])
+            def rgb(c): return [((c >> 11) & 31) * 255 // 31, ((c >> 5) & 63) * 255 // 63, (c & 31) * 255 // 31]
+            p = [rgb(c0), rgb(c1)]
+            if c0 > c1: p += [[(2 * a + b) // 3 for a, b in zip(p[0], p[1])], [(a + 2 * b) // 3 for a, b in zip(p[0], p[1])]]
+            else: p += [[(a + b) // 2 for a, b in zip(p[0], p[1])], [0, 0, 0]]
+            for i in range(16): out[by * 4 + i // 4, bx * 4 + i % 4, :3] = p[(idx >> (2 * i)) & 3]; out[by * 4 + i // 4, bx * 4 + i % 4, 3] = 255
+    return Image.fromarray(out[:f['h'], :f['w']], 'RGBA')
+
+
+def encode_bc1(img, template, swz=None):
+    """PIL image -> BC1 BFLIM bytes (template gives footer: size/format/alignment/swizzle). Simple range-fit compressor."""
+    f = footer(template); bw, bh, pitch = _bc1_geometry(f)
+    swz = swz or (f['swizzle_bits'] & 1, f['swizzle_bits'] >> 1)
+    a = np.array(img.convert('RGB').resize((f['w'], f['h']), Image.LANCZOS)).astype(int)
+    a = np.pad(a, ((0, bh * 4 - f['h']), (0, bw * 4 - f['w']), (0, 0)), mode='edge')
+    buf = bytearray(f['size'])
+    def to565(c): return ((c[0] >> 3) << 11) | ((c[1] >> 2) << 5) | (c[2] >> 3)
+    def from565(c): return np.array([((c >> 11) & 31) * 255 // 31, ((c >> 5) & 63) * 255 // 63, (c & 31) * 255 // 31])
+    for by in range(bh):
+        for bx in range(bw):
+            blk = a[by * 4:by * 4 + 4, bx * 4:bx * 4 + 4].reshape(16, 3)
+            lo, hi = blk.min(0), blk.max(0)
+            c0, c1 = to565(hi), to565(lo)
+            if c0 < c1: c0, c1 = c1, c0
+            if c0 == c1: idx = 0
+            else:
+                pal = [from565(c0), from565(c1)]; pal += [(2 * pal[0] + pal[1]) // 3, (pal[0] + 2 * pal[1]) // 3]
+                idx = 0
+                for i, px in enumerate(blk): idx |= int(np.argmin([((px - p) ** 2).sum() for p in pal])) << (2 * i)
+            o = addr_2d_thin1(bx, by, 64, pitch, *swz) if f['tile'] == 4 else (by * pitch + bx) * 8
+            buf[o:o + 8] = struct.pack('<HHI', c0, c1, idx)
+    return bytes(buf) + template[-0x28:]

@@ -3,7 +3,7 @@
 
   cup0.py list      --content <dir holding data.cup0>
   cup0.py add-track --content <dir> --course <folder|zip> --name "Track name" (--cup N --slot S | --new-cup "My Cup")
-                    [--dir Gu_MyTrack] [--tag DS|3DS|Wii|N64|GBA|SNES|Tour] [--picture my.bflim]
+                    [--dir Gu_MyTrack] [--tag DS|3DS|Wii|N64|GBA|SNES|Tour] [--picture my.bflim | screenshot.png]
   cup0.py selftest  --content <dir>
 
 data.cup0 layout (big endian): 'CUP0', u32 ncups, u32 pool_offset, then ncups records of 80 bytes
@@ -86,7 +86,8 @@ def import_course(course_dir, content, new_dir, picture, force):
         shutil.copy2(os.path.join(course_dir, f), os.path.join(dst, out))
     os.makedirs(os.path.join(content, 'custom'), exist_ok=True)
     pic = 'custom/cPict_%s.bflim' % new_dir
-    if picture: shutil.copy2(picture, os.path.join(content, pic))
+    if picture and picture.lower().endswith(__import__('cpict').IMAGE_EXT): pic = __import__('cpict').install(content, new_dir, picture)   # a screenshot: converted to the game's format
+    elif picture: shutil.copy2(picture, os.path.join(content, pic))
     else:                                                           # placeholder: reuse a picture that already exists
         have = sorted(f for f in os.listdir(os.path.join(content, 'custom')) if f.startswith('cPict_'))
         if not have: raise SystemExit('no --picture given and no existing cPict_*.bflim to use as a placeholder')

@@ -4,7 +4,7 @@ import os, re, subprocess, sys, threading, tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
-import cup0, cupicon, sndg
+import cup0, cupicon, sndg, cpict
 
 CEMU_DEFAULT = os.path.expandvars(r'%APPDATA%\Cemu\mlc01\usr\title\0005000e\1010ed00\content')
 TAGS = ['', '3DS', 'Wii', 'N64', 'GBA', 'SNES', 'DS', 'GCN', 'Tour']
@@ -31,7 +31,7 @@ class App(tk.Tk):
         self.row(add, 'Track download from GameBanana (.zip) or its folder', self.src, 0, self.pick_src)
         self.row(add, 'Name shown in the game (you can type it)', self.name, 1)
         ttk.Label(add, text='Origin tag (small label next to the name, optional)').grid(row=4, column=0, columnspan=3, sticky='w', pady=(4, 0)); ttk.Combobox(add, textvariable=self.tag, values=TAGS, width=8).grid(row=5, column=0, sticky='w')
-        self.row(add, 'Preview picture of the track (.bflim, optional - a placeholder is used otherwise)', self.picture, 3, self.pick_file)
+        self.row(add, 'Track picture: any screenshot (PNG/JPG) of the track - optional, a wrong placeholder is used otherwise', self.picture, 3, self.pick_file)
         ttk.Radiobutton(add, text='Put it in the slot I selected in the list on the left (any cup)', variable=self.mode, value='slot').grid(row=8, column=0, columnspan=3, sticky='w', pady=(8, 0))
         ttk.Radiobutton(add, text='Create a new cup named:', variable=self.mode, value='cup').grid(row=9, column=0, sticky='w')
         ttk.Entry(add, textvariable=self.newcup, width=22).grid(row=9, column=1, columnspan=2, sticky='w')
@@ -74,6 +74,14 @@ class App(tk.Tk):
             n = self.tree.insert('', 'end', iid='c%d' % i, text='%2d  %s%s' % (i, c.name, '' if c.type == 2 else '  (game DLC)'), open=c.type == 2)
             for k, t in enumerate(c.tracks): self.tree.insert(n, 'end', iid='c%d_%d' % (i, k), text='slot %d  %s' % (k, t.name or '(game)'), values=(t.dir, t.tag))
 
+    def pick_picture(self, v, content, parent):
+        f = filedialog.askopenfilename(parent=parent, title='Screenshot of the track', filetypes=[('images', '*.png *.jpg *.jpeg *.webp *.bmp')])
+        if not f: return
+        d = v[2].get().strip()
+        if not d or d == 'Ginvalid': return messagebox.showwarning('pick a folder first', 'choose the course folder of this slot first (not Ginvalid)', parent=parent)
+        try: v[3].set(cpict.install(content, d, f)); self.say('picture made: %s (click Save to keep it)' % v[3].get())
+        except Exception as e: messagebox.showerror('error', str(e), parent=parent)
+
     def edit_cup(self):
         c, _ = self.selected()
         if c is None: return messagebox.showwarning('select a cup', 'select a cup (or one of its slots) in the list')
@@ -88,7 +96,8 @@ class App(tk.Tk):
             v = (tk.StringVar(value=t.name), tk.StringVar(value=t.tag), tk.StringVar(value=t.dir), tk.StringVar(value=t.picture))
             ttk.Label(w, text='slot %d' % k).grid(row=2 + k, column=0, **pad); ttk.Entry(w, textvariable=v[0], width=28).grid(row=2 + k, column=1, **pad)
             ttk.Combobox(w, textvariable=v[1], values=TAGS, width=7).grid(row=2 + k, column=2, **pad)
-            ttk.Combobox(w, textvariable=v[2], values=dirs, width=26).grid(row=2 + k, column=3, **pad); ttk.Combobox(w, textvariable=v[3], values=pics, width=34).grid(row=2 + k, column=4, **pad); rows.append(v)
+            ttk.Combobox(w, textvariable=v[2], values=dirs, width=26).grid(row=2 + k, column=3, **pad); ttk.Combobox(w, textvariable=v[3], values=pics, width=30).grid(row=2 + k, column=4, **pad); rows.append(v)
+            ttk.Button(w, text='From a screenshot...', command=lambda v=v: self.pick_picture(v, content, w)).grid(row=2 + k, column=5, **pad)
         ttk.Label(w, text='To add a track that is not in the folder list yet, use "Add the track" first, then pick it here for other slots.').grid(row=6, column=0, columnspan=5, sticky='w', **pad)
         def save():
             for t, v in zip(cup.tracks, rows):
