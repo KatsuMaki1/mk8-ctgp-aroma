@@ -66,8 +66,8 @@ static void toast(bool error, const char *text) {
 static const uint64_t MK8_TIDS[] = {0x000500001010EB00ull, 0x000500001010EC00ull, 0x000500001010ED00ull};
 
 // One layer per pack directory (skip_<name> disables it) instead of merging all of /vol/content.
-static const char *PACK_DIRS[] = {"course", "mapobj", "ui", "custom", "charger"};
-static CRLayerHandle g_layers[6];
+static const char *PACK_DIRS[] = {"course", "mapobj", "ui", "custom", "charger", "audio"};
+static CRLayerHandle g_layers[8];
 static int g_numLayers;
 static bool g_crReady;
 
