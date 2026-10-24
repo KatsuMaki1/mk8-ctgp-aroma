@@ -72,6 +72,8 @@ The course is copied to `course/<dir>/` (default `Gu_<Name>`; sound banks named 
 (`data.cup0.bak` is kept). `selftest` proves the parser/writer reproduces the original file byte for byte.
 GUI: `python tools/gui.py` lists the cups and adds a track/cup from a GameBanana archive (music fixed automatically when you give it the base game's content folder) or sets a cup's blue medallion icon from an image. Everything below is the same thing from the command line.
 
+Track pictures: `tools/cpict.py --image shot.png --template <any existing custom/cPict_*.bflim> --out custom/cPict_Gu_MyTrack.bflim` turns a screenshot into the game's preview format (BC1, 304x256); `cup0.py add-track --picture shot.png` and the GUI do it for you.
+
 Music: tracks from GameBanana usually ship their stream files (`audio/stream/pBGM_<NAME>_N/_F.bfstm`) under the name of the vanilla course they replace.
 `--extras mapobj,audio` copies them, and `tools/sndg.py rename-music --content <dir> --course Gu_MyTrack --old pBGM_WII_WARIOSMINE --new pBGM_CT_CHOCOISLAND`
 renames the stream files (same length) in `audio/stream` and their paths inside the course's `SNDG_<dir>.bars`, so the original course keeps its own music. The music *label* (e.g. `pBGM_WU_DESERT_N`) must be a name that exists in the base game's `turbo_sound.bfsar` — DLC labels such as `pBGM_WII_WARIOSMINE_N` do not, and a course using one is silent: `tools/sndg.py relabel --content <dir> --course Gu_X --old pBGM_WII_WARIOSMINE_N --new pBGM_WU_DESERT_N` (also for `_F`) fixes that; the game plays whatever stream file the course's own `.bars` names (verified in Cemu), so sharing a label with the vanilla course is harmless.
