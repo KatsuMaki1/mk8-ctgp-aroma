@@ -95,18 +95,23 @@ def import_course(course_dir, content, new_dir, picture, force):
     return pic
 
 
-def import_extras(tree, content, kinds):
-    """copy <...>/content/<kind>/** (e.g. mapobj sky boxes, audio streams) from an archive tree into the content dir; ignores 'Extras' folders"""
-    n = 0
+def import_extras(tree, content, kinds, overwrite=False):
+    """copy <...>/content/<kind>/** (e.g. mapobj sky boxes, audio streams) from an archive tree into the content dir; ignores 'Extras' folders.
+    Files that already exist are KEPT unless overwrite=True: mapobj files are shared by every course, so an import must not replace a sky or
+    object another track (or the game) relies on."""
+    n, skipped = 0, []
     for root, dirs, _ in os.walk(tree):
         if 'Extras' in root.split(os.sep): continue
         if os.path.basename(root) == 'content':
             for k in kinds:
                 src = os.path.join(root, k)
-                if os.path.isdir(src):
-                    shutil.copytree(src, os.path.join(content, k), dirs_exist_ok=True)
-                    n += sum(len(f) for _, _, f in os.walk(src))
+                for dp, _, fs in os.walk(src):
+                    for f in fs:
+                        rel = os.path.relpath(os.path.join(dp, f), root); dst = os.path.join(content, rel)
+                        if os.path.exists(dst) and not overwrite: skipped.append(rel.replace(os.sep, '/')); continue
+                        os.makedirs(os.path.dirname(dst), exist_ok=True); shutil.copy2(os.path.join(dp, f), dst); n += 1
     print('extras copied: %d files (%s)' % (n, ', '.join(kinds)))
+    if skipped: print('kept the existing version of %d shared file(s) (use --overwrite-extras to replace): %s' % (len(skipped), ', '.join(skipped)))
 
 
 def main():
@@ -115,7 +120,7 @@ def main():
     ap.add_argument('--course'); ap.add_argument('--name'); ap.add_argument('--dir'); ap.add_argument('--tag', default='')
     ap.add_argument('--picture'); ap.add_argument('--cup', type=int); ap.add_argument('--slot', type=int); ap.add_argument('--new-cup')
     ap.add_argument('--course-name', help='which course folder to take when the archive holds several'); ap.add_argument('--force', action='store_true')
-    ap.add_argument('--extras', default='', help='also copy these folders from the archive content/ (comma list, e.g. mapobj,audio)')
+    ap.add_argument('--overwrite-extras', action='store_true', help='replace existing sky/object/audio files with the archive ones'); ap.add_argument('--extras', default='', help='also copy these folders from the archive content/ (comma list, e.g. mapobj,audio)')
     a = ap.parse_args()
     path = os.path.join(a.content, 'data.cup0'); raw = open(path, 'rb').read(); cups = parse(raw)
     if a.cmd == 'list': return listing(cups)
@@ -136,7 +141,7 @@ def main():
         if not re.fullmatch(r'G[A-Za-z0-9_]+', new_dir): sys.exit('--dir must start with G and use letters/digits/underscore')
         if any(t.dir == new_dir for c in cups for t in c.tracks) and not a.force: sys.exit('%s is already used in data.cup0' % new_dir)
         pic = import_course(found[src_name], a.content, new_dir, a.picture, a.force)
-        if a.extras: import_extras(a.course if os.path.isdir(a.course) else tmp, a.content, [k for k in a.extras.split(',') if k])
+        if a.extras: import_extras(a.course if os.path.isdir(a.course) else tmp, a.content, [k for k in a.extras.split(',') if k], a.overwrite_extras)
     track = Track(new_dir, pic, a.name, a.tag)
     if a.new_cup:
         custom = [c for c in cups if c.type == 2]
