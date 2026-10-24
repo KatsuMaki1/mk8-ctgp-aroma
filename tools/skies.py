@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Give a course its own sky box: mapobj objects are shared by every course (a sky is looked up by its object name, e.g. VRfair), so two
 tracks that ship different skies with the same name overwrite each other. isolate() copies the sky under a name unique to the course and points
-the course's object list at it (same-length rename, so the byaml layout is untouched).
+the course's object list at it (same-length rename of the file name, of the names inside the file and of the byaml string).
 
   skies.py isolate --content <dir> --course Gu_MyTrack --old VRfair --bfres <the track's own VRfair.bfres>
 """
@@ -16,7 +16,10 @@ def private_name(course, old):
 def isolate(content, course, old, bfres):
     new = private_name(course, old)
     dst = os.path.join(content, 'mapobj', new); os.makedirs(dst, exist_ok=True)
-    shutil.copy2(bfres, os.path.join(dst, new + '.bfres'))
+    data = open(bfres, 'rb').read(); hits = data.count(old.encode())
+    # the game finds the sky MODEL (and its cube map, which the walls reflect) by the object name, so every name inside the file is renamed too.
+    # Same length, and the sky's names all share the prefix, so the file's search dictionaries stay valid.
+    open(os.path.join(dst, new + '.bfres'), 'wb').write(data.replace(old.encode(), new.encode())); print('renamed %d name(s) inside the sky file' % hits)
     n = 0
     for f in os.listdir(os.path.join(content, 'course', course)):
         if f.startswith('course_muunt') and f.endswith('.byaml'):
