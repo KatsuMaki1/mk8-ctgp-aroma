@@ -15,12 +15,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bflim, szs
 from PIL import Image, ImageDraw
 
-PILL_X, PILL_Y = -254.0, -299.0         # pill centre
-PILL_W = 140.0                          # pill width before the 0.9 scale (the lap pill is 160 wide)
-SCALE = 0.9
-ICON_DX, ICON_SIZE = -40.0, 40.0        # icon centre relative to the pill centre (layout units) and its size
-TEXT_DX = 22.0                          # text centre relative to the pill centre
-TEXT_W, TEXT_H = 70.0, 44.0
+# lap/coin layout units (N_All_00 centre = the part centre; the part sits at (-434,-295) in the race HUD with scale 0.9)
+LOCAL_LEFT, LOCAL_W = 116.0, 120.0      # new pill: left edge (the lap pill ends at 122) and width
+ICON_DX, ICON_SIZE = 30.0, 40.0         # icon centre = left edge + ICON_DX
+# race HUD units (where CTGP's text pane lives): part centre + 0.9 * local
+TEXT_X, TEXT_Y = -262.0, -295.0
+TEXT_W, TEXT_H = 90.0, 44.0
 
 LAPCOIN = 'blyt/rc_L_LapCoin_00.bflyt'
 RACEVIEW = 'blyt/rc_RaceView_1P_00.bflyt'
@@ -101,78 +101,58 @@ def draw_icon(px=48, ss=8):
 
 
 # ------------------------------------------------------------------ build
+def children_end(secs, i):
+    """index just after the pae1 that closes the pas1 following secs[i] (or i+1 when the pane has no children)"""
+    if i + 1 >= len(secs) or secs[i + 1][0] != 'pas1': return i + 1
+    depth = 0
+    for j in range(i + 1, len(secs)):
+        if secs[j][0] == 'pas1': depth += 1
+        elif secs[j][0] == 'pae1':
+            depth -= 1
+            if depth == 0: return j + 1
+    raise ValueError('unbalanced panes')
+
+
 def build(base_race, ctgp_in, ctgp_out, preview=None):
     base = {h: d for n, d, h, a in szs.sarc_info(szs.yaz0_decode(open(base_race, 'rb').read()))[0]}
     get = lambda name: base[szs.sarc_hash(name)]
     raw = szs.yaz0_decode(open(ctgp_in, 'rb').read()); info, _, ver = szs.sarc_info(raw)
     files = {n: d for n, d, h, a in info}; aligns = szs.sarc_aligns(raw)
+    if LAPCOIN in files: raise SystemExit('this ctgp.szs already has the speedometer layout; start from the original ctgp.szs (.pre-speedo)')
 
-    # --- source pieces from the lap/coin counter
-    lh, lsecs = split(get(LAPCOIN)); ltex = read_txl1(next(s for t, s in lsecs if t == 'txl1')); lmat = read_mat1(next(s for t, s in lsecs if t == 'mat1'))
-    mat_by_name = {cstr(m[:28]).strip(): i for i, m in enumerate(lmat)}
-    wnd = {pane_name(s): s for t, s in lsecs if t == 'wnd1'}
-    pic = {pane_name(s): s for t, s in lsecs if t == 'pic1'}
-
-    # --- CTGP race HUD layout
-    hdr, secs = split(files[RACEVIEW]); assert pane_name(next(s for t, s in secs if t == 'txt1')) == 'L_Speedometer_00'
-    if any(t == 'txl1' for t, _ in secs): raise SystemExit('this ctgp.szs already has the speedometer layout; start from the original ctgp.szs (.bak)')
-    new_tex = []
-    def tex_idx(n):
-        if n not in new_tex: new_tex.append(n)
-        return new_tex.index(n)
-    mats = read_mat1(next(s for t, s in secs if t == 'mat1')); first_new = len(mats); added = []
-
-    def clone_material(name):
-        m = bytearray(lmat[mat_by_name[name]]); flags = struct.unpack('>I', m[36:40])[0] if len(m) > 36 else 0
-        for k in range(flags & 3):                                  # texture maps: re-point to the new texture list
-            o = 40 + 4 * k; ti = struct.unpack('>H', m[o:o + 2])[0]
-            m[o:o + 2] = struct.pack('>H', tex_idx(ltex[ti]))
-        added.append(bytes(m)); return first_new + len(added) - 1
-
-    def clone_wnd(src_name, dst_name, pos, size, kind):
-        s = bytearray(wnd[src_name]); set_pane(s, dst_name, pos, (SCALE, SCALE) if kind == '00' else (1.0, 1.0), size)
-        content = struct.unpack('>I', s[0x68:0x6C])[0]; frames = struct.unpack('>I', s[0x6C:0x70])[0]; assert content == 0x70 and frames == 0x84
-        names = [n for n in mat_by_name if n.startswith('W_FlagBase_' + kind)]
-        c = next(n for n in names if n.endswith('C')); order = [c] + [next(n for n in names if n.endswith(e)) for e in ('LT', 'RT', 'LB', 'RB')]
-        assert struct.unpack('>H', s[0x80:0x82])[0] == mat_by_name[order[0]]
-        new_idx = [clone_material(n) for n in order]
-        struct.pack_into('>H', s, 0x80, new_idx[0])
-        for k in range(4): struct.pack_into('>H', s, 0x94 + 4 * k, new_idx[1 + k])
-        return s
-
-    w0 = clone_wnd('W_FlagBase_00', 'W_Speedo_00', (PILL_X, PILL_Y), (PILL_W, 72.0), '00')
-    w1 = clone_wnd('W_FlagBase_01', 'W_Speedo_01', (4.0, 0.0), (PILL_W - 6, 65.0), '01')
-    icon = bytearray(pic['P_Lap_00']); set_pane(icon, 'P_Speedo_00', (PILL_X + ICON_DX * SCALE, PILL_Y), (1.0, 1.0), (ICON_SIZE, ICON_SIZE))
-    assert struct.unpack('>H', icon[0x64:0x66])[0] == mat_by_name['P_Lap_00']
-    m = bytearray(lmat[mat_by_name['P_Lap_00']]); m[40:42] = struct.pack('>H', tex_idx(ICON_TEX + '.bflim')); added.append(bytes(m))
-    struct.pack_into('>H', icon, 0x64, first_new + len(added) - 1)
-
-    # --- the text pane CTGP's code fills in: same style as the coin / lap digits
-    txt = next(s for t, s in secs if t == 'txt1')
-    set_pane(txt, None, (PILL_X + TEXT_DX * SCALE, PILL_Y), None, (TEXT_W, TEXT_H))
-    struct.pack_into('>H', txt, 0x5A, 1)                                           # font index 1 = turbo_PointNum.bffnt
-    struct.pack_into('>f', txt, 0x60, 0.22)                                        # italic
-    txt[0x68:0x70] = bytes.fromhex('ffffffff969696ff')                             # white -> grey, like T_Coin_00
-    struct.pack_into('>2f', txt, 0x70, 31.11, 38.76)                               # font size
-
-    out = []
-    for t, s in secs:
-        if t == 'lyt1': out.append([t, s]); out.append(make_txl1(new_tex))
-        elif t == 'fnl1': out.append(make_fnl1(['turbo_messageFontOutline_50.bffnt', 'turbo_PointNum.bffnt']))
-        elif t == 'mat1': out.append(make_mat1(mats + added))
-        elif t == 'txt1':
-            out += [[ 'wnd1', w0], sec('pas1', b''), ['wnd1', w1], sec('pae1', b''), ['pic1', icon], [t, s]]
+    # ---- 1. the lap/coin counter layout (the game plays its In/Out animation on N_All_00): add the pill + icon inside it, so they appear with it
+    hdr, secs = split(get(LAPCOIN))
+    tex = read_txl1(next(s for t, s in secs if t == 'txl1')); icon_tex = ICON_TEX + '.bflim'; tex.append(icon_tex)
+    mats = read_mat1(next(s for t, s in secs if t == 'mat1')); mat_by_name = {cstr(m[:28]).strip(): i for i, m in enumerate(mats)}
+    names = [pane_name(s) if t in ('wnd1', 'pic1', 'pan1', 'txt1') else None for t, s in secs]
+    at = lambda n: names.index(n)
+    w0 = bytearray(secs[at('W_FlagBase_00')][1]); w1 = bytearray(secs[at('W_FlagBase_01')][1]); lap = bytearray(secs[at('P_Lap_00')][1])
+    set_pane(w0, 'W_Speedo_00', (LOCAL_LEFT, 0.0), None, (LOCAL_W, 72.0)); set_pane(w1, 'W_Speedo_01', (4.0, 0.0), None, (LOCAL_W - 6, 65.0))
+    m = bytearray(mats[mat_by_name['P_Lap_00']]); m[40:42] = struct.pack('>H', len(tex) - 1); mats.append(bytes(m))
+    icon = lap; set_pane(icon, 'P_Speedo_00', (LOCAL_LEFT + ICON_DX, 0.0), None, (ICON_SIZE, ICON_SIZE))
+    assert struct.unpack('>H', icon[0x64:0x66])[0] == mat_by_name['P_Lap_00']; struct.pack_into('>H', icon, 0x64, len(mats) - 1)
+    out = []; end = children_end(secs, at('W_FlagBase_00'))
+    for i, (t, s) in enumerate(secs):
+        if t == 'txl1': out.append(make_txl1(tex))
+        elif t == 'mat1': out.append(make_mat1(mats))
         else: out.append([t, s])
-    files[RACEVIEW] = join(hdr, out)
-    for n in [t[:-6] for t in new_tex]:
-        name = 'timg/%s.bflim' % n
-        if n == ICON_TEX:
-            tmpl = get('timg/ym_Coin_00^l.bflim'); img = draw_icon(48)
-            files[name] = bflim.encode_rgba8(img, tmpl)
+        if i == end - 1: out += [['wnd1', w0], sec('pas1', b''), ['wnd1', w1], sec('pae1', b''), ['pic1', icon]]
+    files[LAPCOIN] = join(hdr, out)
+    for n in tex:                                                   # the layout now comes from this archive: give it every texture it uses
+        nm = 'timg/%s' % n
+        if n == icon_tex:
+            tmpl = get('timg/ym_Coin_00^l.bflim'); img = draw_icon(48); files[nm] = bflim.encode_rgba8(img, tmpl)
             if preview: img.resize((192, 192), Image.NEAREST).save(preview)
-        else: files[name] = get(name)
-        aligns[name] = max(0x20, bflim.footer(files[name])['align'])
-    aligns[RACEVIEW] = aligns.get(RACEVIEW, 4)
+        else: files[nm] = get(nm)
+        aligns[nm] = max(0x20, bflim.footer(files[nm])['align'])
+
+    # ---- 2. CTGP's race HUD: only restyle the text pane its code writes the speed into (found by name, so it stays where CTGP expects it)
+    hdr, secs = split(files[RACEVIEW]); txt = next(s for t, s in secs if t == 'txt1'); assert pane_name(txt) == 'L_Speedometer_00'
+    set_pane(txt, None, (TEXT_X, TEXT_Y), None, (TEXT_W, TEXT_H))
+    struct.pack_into('>f', txt, 0x60, 0.22)                                        # italic like the game's digits
+    txt[0x68:0x70] = bytes.fromhex('ffffffff969696ff'); struct.pack_into('>2f', txt, 0x70, 36.0, 40.0)
+    off = struct.unpack('>I', txt[0x64:0x68])[0]; txt[off:off + 2] = bytes(2)       # placeholder text "... km/h" -> empty until the game writes the speed
+    files[RACEVIEW] = join(hdr, secs)
     open(ctgp_out, 'wb').write(szs.yaz0_store(szs.sarc_write(list(files.items()), aligns, ver)))
 
 
