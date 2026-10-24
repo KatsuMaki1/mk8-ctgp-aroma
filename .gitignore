@@ -1,0 +1,24 @@
+# Nintendo / CTGP-Cafe files and anything derived from them are NOT part of this repo
+*.rpx
+*.rpl
+*.elf
+*.wps
+*.zip
+*.szs
+*.bflim
+*.cup0
+otp.bin
+keys.txt
+cetk
+tmd*
+# a CTGP pack (original or ported): Code.bin, Data.bin, Patches.hax, Verify.hax, Addr.bin
+Code.bin
+Data.bin
+Addr.bin
+*.hax
+cafeloader/
+# build output
+build/
+out/
+__pycache__/
+cemu/shot.png
