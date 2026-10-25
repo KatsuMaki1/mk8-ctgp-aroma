@@ -1,8 +1,8 @@
 # mk8-ctgp-aroma
 
-Tools and an Aroma plugin to run **CTGP-Café** (custom tracks for Mario Kart 8, Wii U) on a **v81** game, on **Cemu** and on a console with **Aroma**.
+Tools and an Aroma plugin to run **CTGP-CafÃ©** (custom tracks for Mario Kart 8, Wii U) on a **v81** game, on **Cemu** and on a console with **Aroma**.
 
-CTGP-Café's public release is built for MK8 **v64**. A v81 game has a different code layout, so the release cannot be applied as is
+CTGP-CafÃ©'s public release is built for MK8 **v64**. A v81 game has a different code layout, so the release cannot be applied as is
 (that is why it silently does nothing on a v81 console). This repository ports it: every address the release code uses is moved from the
 v64 build to the v81 build by aligning the two executables, and the result is delivered two ways:
 
@@ -16,13 +16,13 @@ v64 build to the v81 build by aligning the two executables, and the result is de
 > Everything is static-checked by `tools/verify_rpx.py` (0 failures) but expect rough edges.
 
 This repository contains **only our code**. It does not contain, and you must supply yourself:
-- the CTGP-Café release (`ctgp_cafe_wiiu.zip`: `Code.bin`, `Data.bin`, `Patches.hax`, tracks, layouts) — © its authors, no licence is published for it;
-- your own Mario Kart 8 `Turbo.rpx` files (v81, and v64 for the porting step) — © Nintendo.
+- the CTGP-CafÃ© release (`ctgp_cafe_wiiu.zip`: `Code.bin`, `Data.bin`, `Patches.hax`, tracks, layouts) â€” Â© its authors, no licence is published for it;
+- your own Mario Kart 8 `Turbo.rpx` files (v81, and v64 for the porting step) â€” Â© Nintendo.
 
 ## How it works (short)
 
 1. `vmap.py` aligns the v64 and v81 `.text` sections on an instruction "skeleton" (branch offsets and address-like immediates dropped), anchored on
-   windows that are unique in both builds. 99.7 % of the 2.9 M instructions align; three known v64↔v81 address pairs from the CTGP sources are reproduced exactly.
+   windows that are unique in both builds. 99.7 % of the 2.9 M instructions align; three known v64â†”v81 address pairs from the CTGP sources are reproduced exactly.
    Data addresses are mapped through the aligned code (same global referenced by aligned `lis`/`lo16` pairs) and through vtable slots.
 2. `retarget.py` rewrites the CTGP blob for the new addresses: `lis`/`lo16` pairs (data-flow over the CFG with capstone), `bl` targets, pointer tables.
 3. `mkrpx.py` adds the blob to the RPX as two sections, applies the 48 patches (vtable pointers by editing the load-time relocation addend) and fixes
@@ -40,7 +40,7 @@ Requirements: Python 3, `pip install capstone pycryptodome`; devkitPro + WUPS + 
 ```
 python tools/nus_fetch.py --title 0005000e1010ed00 --version 64 --path code/Turbo.rpx --otp <path to your otp.bin> --out Turbo_v64.rpx
 ```
-(use the title id of your region: `…ed00` EUR, `…ec00` USA, `…eb00` JPN; the v81 one is your installed update's `code/Turbo.rpx`.)
+(use the title id of your region: `â€¦ed00` EUR, `â€¦ec00` USA, `â€¦eb00` JPN; the v81 one is your installed update's `code/Turbo.rpx`.)
 
 ### 1. Cemu
 ```
@@ -60,7 +60,7 @@ Debug switches (empty files in `sd:/wiiu/mk8-ct/`): `log_file`, `notif`, `no_cod
 
 ## Adding tracks (e.g. from GameBanana)
 
-`tools/cup0.py` edits CTGP-Caf�'s `data.cup0` and imports a course folder (a directory or a `.zip` containing a folder with `course_model.szs`):
+`tools/cup0.py` edits CTGP-Café's `data.cup0` and imports a course folder (a directory or a `.zip` containing a folder with `course_model.szs`):
 ```
 python tools/cup0.py list --content <content dir>
 python tools/cup0.py add-track --content <content dir> --course SomeTrack.zip --name "Some Track" --tag DS --cup 14 --slot 0 --picture preview.bflim
@@ -78,12 +78,16 @@ Track pictures: `tools/cpict.py --image shot.png --template <any existing custom
 
 Music: tracks from GameBanana usually ship their stream files (`audio/stream/pBGM_<NAME>_N/_F.bfstm`) under the name of the vanilla course they replace.
 `--extras mapobj,audio` copies them, and `tools/sndg.py rename-music --content <dir> --course Gu_MyTrack --old pBGM_WII_WARIOSMINE --new pBGM_CT_CHOCOISLAND`
-renames the stream files (same length) in `audio/stream` and their paths inside the course's `SNDG_<dir>.bars`, so the original course keeps its own music. The music *label* (e.g. `pBGM_WU_DESERT_N`) must be a name that exists in the base game's `turbo_sound.bfsar` � DLC labels such as `pBGM_WII_WARIOSMINE_N` do not, and a course using one is silent: `tools/sndg.py relabel --content <dir> --course Gu_X --old pBGM_WII_WARIOSMINE_N --new pBGM_WU_DESERT_N` (also for `_F`) fixes that; the game plays whatever stream file the course's own `.bars` names (verified in Cemu), so sharing a label with the vanilla course is harmless.
+renames the stream files (same length) in `audio/stream` and their paths inside the course's `SNDG_<dir>.bars`, so the original course keeps its own music. The music *label* (e.g. `pBGM_WU_DESERT_N`) must be a name that exists in the base game's `turbo_sound.bfsar` — DLC labels such as `pBGM_WII_WARIOSMINE_N` do not, and a course using one is silent: `tools/sndg.py relabel --content <dir> --course Gu_X --old pBGM_WII_WARIOSMINE_N --new pBGM_WU_DESERT_N` (also for `_F`) fixes that; the game plays whatever stream file the course's own `.bars` names (verified in Cemu), so sharing a label with the vanilla course is harmless.
 Sky boxes (`mapobj/VR*`) cannot be renamed that simply and still replace the vanilla ones.
 
 Limits, which come from the CTGP code: 6 CTGP cups of 4 tracks (the release uses 5, so one cup is free), the 12 DLC cups can be replaced slot by slot,
 battle courses are hard-coded and cannot be added without editing the code. Tracks must be built for MK8 itself; some need extra `mapobj` files. Untested with real GameBanana archives.
 
 ## Credits
-CTGP-Café by RamboGlaz and contributors · CafeLoader by aboood40091 / AboodXD · Wii U Plugin System by Maschell and contributors.
+CTGP-Café by RamboGlaz and contributors. CafeLoader by aboood40091 / AboodXD · Wii U Plugin System by Maschell and contributors.
 This project's own code is MIT licensed.
+
+
+## AI Disclosure
+Original code has been heavily ai reverse engineered and recoded to work on latest update.
