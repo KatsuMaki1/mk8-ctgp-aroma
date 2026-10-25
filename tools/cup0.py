@@ -157,10 +157,10 @@ def main():
         print('new cup %d "%s" (picture slot %d): the track fills all 4 slots for now; replace slots 1-3 with --cup %d --slot 1..3' % (a.cup, a.new_cup, free[0], a.cup))
         print('warning: more cups than the original 17 is untested; the game code may have fixed-size tables')
     if not (0 <= a.cup < len(cups) and a.slot in range(4)): sys.exit('--cup/--slot out of range (see `list`)')
-    shutil.copy2(path, path + '.bak')
+    __import__('backup').save(a.content, path)
     cups[a.cup].tracks[a.slot] = track
     open(path, 'wb').write(build(cups))
-    print('cup %d slot %d is now "%s" (%s); previous data.cup0 saved as data.cup0.bak' % (a.cup, a.slot, a.name, new_dir))
+    print('cup %d slot %d is now "%s" (%s); previous data.cup0 saved in <content>_backups' % (a.cup, a.slot, a.name, new_dir))
 
 
 if __name__ == '__main__':

@@ -25,7 +25,7 @@ def isolate(content, course, old, bfres):
         if f.startswith('course_muunt') and f.endswith('.byaml'):
             p = os.path.join(content, 'course', course, f); b = open(p, 'rb').read(); key = old.encode() + bytes(1)
             if key in b:
-                open(p + '.bak', 'wb').write(b) if not os.path.exists(p + '.bak') else None
+                __import__('backup').save(content, p)
                 open(p, 'wb').write(b.replace(key, new.encode() + bytes(1))); n += b.count(key)
     if not n: raise SystemExit('%s not found in the course object list of %s' % (old, course))
     print('%s: sky %s -> %s (own copy in mapobj/%s, %d reference(s) updated)' % (course, old, new, new, n)); return new

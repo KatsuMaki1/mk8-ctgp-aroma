@@ -4,7 +4,7 @@ import os, queue, re, subprocess, sys, threading, tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
-import cup0, cupicon, sndg, cpict
+import backup, cup0, cupicon, sndg, cpict
 
 CEMU_DEFAULT = os.path.expandvars(r'%APPDATA%\Cemu\mlc01\usr\title\0005000e\1010ed00\content')
 TAGS = ['', '3DS', 'Wii', 'N64', 'GBA', 'SNES', 'DS', 'GCN', 'Tour']
@@ -113,7 +113,7 @@ class App(tk.Tk):
                 if not v[2].get().strip(): return messagebox.showwarning('missing', 'every slot needs a course folder', parent=w)
                 t.name, t.tag, t.dir, t.picture = v[0].get().strip(), v[1].get(), v[2].get().strip(), v[3].get().strip()
             cup.name = name.get().strip() or cup.name
-            p = os.path.join(content, 'data.cup0'); open(p + '.bak', 'wb').write(open(p, 'rb').read()); open(p, 'wb').write(cup0.build(self.cups))
+            p = os.path.join(content, 'data.cup0'); backup.save(content, p); open(p, 'wb').write(cup0.build(self.cups))
             self.say('cup "%s" saved; restart Cemu' % cup.name); w.destroy(); self.refresh()
         ttk.Button(w, text='Save', command=save).grid(row=7, column=0, **pad); ttk.Button(w, text='Cancel', command=w.destroy).grid(row=7, column=1, sticky='w', **pad)
 
@@ -162,7 +162,7 @@ class App(tk.Tk):
         if not self.emblem.get(): return messagebox.showwarning('missing', 'choose an emblem image')
         def work():
             szs_path = os.path.join(content, 'ui', 'cmn', 'ctgp.szs')
-            if not os.path.exists(szs_path + '.bak'): open(szs_path + '.bak', 'wb').write(open(szs_path, 'rb').read())
+            backup.save(content, szs_path)
             name = 'ym_CupIcon' + re.sub(r'[^A-Za-z0-9]', '', self.cups[c].name)[:12]
             data, _ = cupicon.build(self.emblem.get(), szs_path)
             n = cupicon.install_icon(szs_path, szs_path, data, self.cups[c].icon, name); self.say('icon installed in ctgp.szs (%d bytes); restart Cemu' % n)

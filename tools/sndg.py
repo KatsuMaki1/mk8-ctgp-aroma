@@ -24,7 +24,7 @@ def rename_music(content, course, old, new):
             data, n = re.subn(rb'%s(\w*\.bfstm)' % re.escape(old.encode()), lambda m: new.encode() + m.group(1), data); hits += n
         files.append((name, data))
     if not hits: raise SystemExit('%s not found in %s' % (old, path))
-    open(path + '.bak', 'wb').write(raw) if not os.path.exists(path + '.bak') else None
+    __import__('backup').save(content, path)
     open(path, 'wb').write(szs.sarc_write(files, szs.sarc_aligns(raw, 0x20), ver))
     moved = []
     stream = os.path.join(content, 'audio', 'stream')
@@ -49,7 +49,7 @@ def relabel(content, course, old, new):
             data, n = re.subn(rb'%s(\w*(?:\.bfst[mp])?)\x00' % re.escape(old.encode()), lambda m: new.encode() + m.group(1) + nul + pad, data); hits += n
         files.append((name, data))
     if not hits: raise SystemExit('%s not found in %s' % (old, path))
-    if not os.path.exists(path + '.bak'): open(path + '.bak', 'wb').write(raw)
+    __import__('backup').save(content, path)
     open(path, 'wb').write(szs.sarc_write(files, szs.sarc_aligns(raw, 0x20), ver)); print('%s: label %s -> %s (%d places)' % (course, old, new, hits))
 
 
@@ -80,7 +80,7 @@ def set_labels(content, course, mapping):
             data += new_blob; data += bytes(-len(data) % 4); struct.pack_into('>I', data, 8, len(data)); data = bytes(data)
         files.append((name, data))
     if not done: raise SystemExit('none of %s found in %s' % (', '.join(mapping), path))
-    if not os.path.exists(path + '.bak'): open(path + '.bak', 'wb').write(raw)
+    __import__('backup').save(content, path)
     open(path, 'wb').write(szs.sarc_write(files, szs.sarc_aligns(raw, 0x20), ver)); print('%s: %d label reference(s) re-pointed' % (course, done)); return done
 
 

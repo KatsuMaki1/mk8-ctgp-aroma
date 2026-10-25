@@ -197,7 +197,6 @@ if __name__ == '__main__':
     ap.add_argument('cmd', choices=['install']); ap.add_argument('--base-game', required=True); ap.add_argument('--content', required=True)
     ap.add_argument('--release'); ap.add_argument('--data-out'); ap.add_argument('--preview'); ap.add_argument('--sibling', action='store_true', help='fallback layout: panes next to the lap part instead of inside it')
     a = ap.parse_args()
-    target = os.path.join(a.content, 'ui', 'cmn', 'ctgp.szs'); src = target + '.pre-speedo'
-    if not os.path.exists(src): shutil.copy2(target, src)
-    build(os.path.join(a.base_game, 'ui', 'cmn', 'race.szs'), src, target, a.preview, a.sibling); print('ctgp.szs updated (original kept as ctgp.szs.pre-speedo)')
+    target = os.path.join(a.content, 'ui', 'cmn', 'ctgp.szs'); src = __import__('backup').save(a.content, target, 'pre-speedo')
+    build(os.path.join(a.base_game, 'ui', 'cmn', 'race.szs'), src, target, a.preview, a.sibling); print('ctgp.szs updated (original kept in <content>_backups)')
     if a.release and a.data_out: print('Data.bin patched at', hex(patch_data(a.release, a.data_out)))
