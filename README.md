@@ -1,8 +1,8 @@
 # mk8-ctgp-aroma
 
-Tools and an Aroma plugin to run **CTGP-CafÃ©** (custom tracks for Mario Kart 8, Wii U) on a **v81** game, on **Cemu** and on a console with **Aroma**.
+Tools and an Aroma plugin to run **CTGP-Café** (custom tracks for Mario Kart 8, Wii U) on a **v81** game, on **Cemu** and on a console with **Aroma**.
 
-CTGP-CafÃ©'s public release is built for MK8 **v64**. A v81 game has a different code layout, so the release cannot be applied as is
+CTGP-Café's public release is built for MK8 **v64**. A v81 game has a different code layout, so the release cannot be applied as is
 (that is why it silently does nothing on a v81 console). This repository ports it: every address the release code uses is moved from the
 v64 build to the v81 build by aligning the two executables, and the result is delivered two ways:
 
@@ -16,13 +16,13 @@ v64 build to the v81 build by aligning the two executables, and the result is de
 > Everything is static-checked by `tools/verify_rpx.py` (0 failures) but expect rough edges.
 
 This repository contains **only our code**. It does not contain, and you must supply yourself:
-- the CTGP-CafÃ© release (`ctgp_cafe_wiiu.zip`: `Code.bin`, `Data.bin`, `Patches.hax`, tracks, layouts) â€” Â© its authors, no licence is published for it;
-- your own Mario Kart 8 `Turbo.rpx` files (v81, and v64 for the porting step) â€” Â© Nintendo.
+- the CTGP-Café release (`ctgp_cafe_wiiu.zip`: `Code.bin`, `Data.bin`, `Patches.hax`, tracks, layouts) from its authors, no licence is published for it;
+- your own Mario Kart 8 `Turbo.rpx` files (v81, and v64 for the porting step).
 
 ## How it works (short)
 
 1. `vmap.py` aligns the v64 and v81 `.text` sections on an instruction "skeleton" (branch offsets and address-like immediates dropped), anchored on
-   windows that are unique in both builds. 99.7 % of the 2.9 M instructions align; three known v64â†”v81 address pairs from the CTGP sources are reproduced exactly.
+   windows that are unique in both builds. 99.7 % of the 2.9 M instructions align; three known v64 -> v81 address pairs from the CTGP sources are reproduced exactly.
    Data addresses are mapped through the aligned code (same global referenced by aligned `lis`/`lo16` pairs) and through vtable slots.
 2. `retarget.py` rewrites the CTGP blob for the new addresses: `lis`/`lo16` pairs (data-flow over the CFG with capstone), `bl` targets, pointer tables.
 3. `mkrpx.py` adds the blob to the RPX as two sections, applies the 48 patches (vtable pointers by editing the load-time relocation addend) and fixes
