@@ -70,6 +70,8 @@ python tools/cup0.py add-track --content <content dir> --course Another.zip --na
 The course is copied to `course/<dir>/` (default `Gu_<Name>`; sound banks named after the folder are renamed), a preview picture is copied to
 `custom/cPict_<dir>.bflim` (a placeholder if you give none: the tool does not convert PNG to BFLIM), and the slot of `data.cup0` is rewritten
 (`data.cup0.bak` is kept). `selftest` proves the parser/writer reproduces the original file byte for byte.
+Cups and pages: in `data.cup0` the `type` of a cup is the page of the cup screen it is on (what Mario Kart 8 Ultimate does with the unchanged CTGP code): 1 = the game's DLC cups with their original tracks, 2/3/5 = custom pages of up to 8 cups (`icon` = position 0..7), 4 = DLC cups that hold custom tracks (all four slots custom). The icon shown for a cup is frame `cup_id` of `anim/mn_L_CupSlctBtn_00_IconChange.bflan` in `ui/cmn/ctgp.szs`; `tools/cupicon.py` extends it (`set_icons`) so cups with ids above 29 get an icon.
+
 GUI: `python tools/gui.py` lists the cups and adds a track/cup from a GameBanana archive (music fixed automatically when you give it the base game's content folder) or sets a cup's blue medallion icon from an image. Everything below is the same thing from the command line.
 
 Track pictures: `tools/cpict.py --image shot.png --template <any existing custom/cPict_*.bflim> --out custom/cPict_Gu_MyTrack.bflim` turns a screenshot into the game's preview format (BC1, 304x256); `cup0.py add-track --picture shot.png` and the GUI do it for you.

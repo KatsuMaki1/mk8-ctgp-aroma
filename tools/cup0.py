@@ -118,6 +118,33 @@ def import_extras(tree, content, kinds, overwrite=False, course=None):
     if skipped: print('kept the existing version of %d shared file(s) (use --overwrite-extras to replace): %s' % (len(skipped), ', '.join(skipped)))
 
 
+# Cup "types" are pages of the cup selection screen (what Mario Kart 8 Ultimate does with the same CTGP code):
+#   1 = the game's DLC cups (dir "Ginvalid" = the original track)   2/3/5 = custom pages, 8 cups each (icon = position 0..7)
+#   4 = DLC cups holding custom tracks (all 4 slots must be custom).   The icon shown is animation frame <cup_id>.
+POOLS = {2: range(24, 32), 3: range(36, 44), 5: range(48, 53)}      # cup ids used by Ultimate (proven values)
+
+
+def next_free_cup(cups):
+    """-> (type, icon position, cup id) of the first free place on the custom pages, or None"""
+    used_ids = {c.cup_id for c in cups}
+    for t, ids in POOLS.items():
+        icons = {c.icon for c in cups if c.type == t}; free_ids = [i for i in ids if i not in used_ids]
+        for icon in range(8):
+            if icon not in icons and free_ids: return t, icon, free_ids[0]
+    return None
+
+
+def make_playable(cups, cup, track):
+    """a DLC cup (type 1) that gets a custom track becomes a type 4 cup; its other slots take the same track until you replace them"""
+    if cup.type != 1 or track.dir == 'Ginvalid': return False
+    used = {c.icon for c in cups if c.type == 4}; free = [i for i in range(8) if i not in used]
+    if not free: raise SystemExit('the DLC page (type 4) holds at most 8 cups')
+    cup.type, cup.icon = 4, free[0]
+    for k, t in enumerate(cup.tracks):
+        if t.dir == 'Ginvalid': cup.tracks[k] = Track(**vars(track))
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('cmd', choices=['list', 'add-track', 'selftest']); ap.add_argument('--content', required=True)
@@ -148,17 +175,18 @@ def main():
         if a.extras: import_extras(a.course if os.path.isdir(a.course) else tmp, a.content, [k for k in a.extras.split(',') if k], a.overwrite_extras, new_dir)
     track = Track(new_dir, pic, a.name, a.tag)
     if a.new_cup:
-        custom = [c for c in cups if c.type == 2]
-        free = [i for i in range(6) if i not in {c.icon for c in custom}]
-        if not free: sys.exit('all 6 CTGP cup slots are used: replace a slot with --cup/--slot instead')
+        place = next_free_cup(cups)
+        if not place: sys.exit('no free cup place left (pages: 2 -> 8 cups, 3 -> 8, 5 -> 5): replace a slot with --cup/--slot instead')
+        t, icon, cid = place
         # A cup always has 4 tracks: start with the new track in all four slots, replace slots 1..3 with later add-track calls.
-        cups.append(Cup(2, free[0], a.new_cup, max(c.cup_id for c in cups) + 1, [Track(**vars(track)) for _ in range(4)]))
+        cups.append(Cup(t, icon, a.new_cup, cid, [Track(**vars(track)) for _ in range(4)]))
         a.cup, a.slot = len(cups) - 1, 0
-        print('new cup %d "%s" (picture slot %d): the track fills all 4 slots for now; replace slots 1-3 with --cup %d --slot 1..3' % (a.cup, a.new_cup, free[0], a.cup))
-        print('warning: more cups than the original 17 is untested; the game code may have fixed-size tables')
+        print('new cup %d "%s" on page type %d (position %d, id %d): the track fills all 4 slots for now; replace slots 1-3 with --cup %d --slot 1..3' % (a.cup, a.new_cup, t, icon, cid, a.cup))
+        print('note: its icon needs a texture: cupicon.py / the GUI creates one for the new cup id')
     if not (0 <= a.cup < len(cups) and a.slot in range(4)): sys.exit('--cup/--slot out of range (see `list`)')
     __import__('backup').save(a.content, path)
     cups[a.cup].tracks[a.slot] = track
+    if make_playable(cups, cups[a.cup], track): print('this DLC cup now holds custom tracks: it became a type 4 cup (the other slots use the same track until you replace them)')
     open(path, 'wb').write(build(cups))
     print('cup %d slot %d is now "%s" (%s); previous data.cup0 saved in <content>_backups' % (a.cup, a.slot, a.name, new_dir))
 

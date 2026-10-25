@@ -54,50 +54,77 @@ if __name__ == '__main__':
 import struct
 
 ANIM = 'anim/mn_L_CupSlctBtn_00_IconChange.bflan'      # texture-pattern animation of the cup button: frame N -> icon texture
-def icon_frame(idx):
-    """cup0 `icon` 0..5 -> animation frame; verified in game: 0,1,2 -> 24,25,26 but 3,4,5 -> 29,28,27"""
-    return 24 + idx if idx < 3 else 32 - idx
+# (the icon shown for a cup is animation frame <cup_id>; see set_icons below)
 
 
-def bflan_set_icon(anim, tex_name, frame):
-    """add `tex_name` to the animation's texture list and make `frame` use it; returns the new BFLAN bytes"""
-    assert anim[:4] == b'FLAN'
+# ------------------------------------------------------------------ icons for ANY cup id (frame number = cup_id)
+def bflan_set_icons(anim, mapping, filler=None):
+    """mapping {cup_id: texture name 'ym_CupIcon<X>^h.bflim'}. The animation shows frame <cup_id>, so the key list is extended up to the highest id;
+    frames nobody uses get `filler` (a texture name that already exists in the animation; default: the first one)."""
     p = 20
     while anim[p:p + 4] != b'pai1': p += struct.unpack('>I', anim[p + 4:p + 8])[0]
     psize, = struct.unpack('>I', anim[p + 4:p + 8]); pai = bytearray(anim[p:p + psize])
     frame_size, flags, pad, ntex, nent, ent_off = struct.unpack('>HBBHHI', pai[8:20])
-    # 1. keyframe of the cup icon pattern (the entry whose name is P_CupIcon_00, tag FLTP): 8-byte keys {f32 frame, u16 texture, u16 pad}
-    table = struct.unpack('>%dI' % nent, pai[ent_off:ent_off + 4 * nent])
-    for eo in table:
-        if pai[eo:eo + 12] == b'P_CupIcon_00': break
-    else: raise ValueError('P_CupIcon_00 not found')
-    tag = eo + 0x24; assert pai[tag:tag + 4] == b'FLTP'
-    nkeys, = struct.unpack('>H', pai[tag + 0x10:tag + 0x12]); keys = tag + 0x18
-    for k in range(nkeys):
-        if struct.unpack('>f', pai[keys + 8 * k:keys + 8 * k + 4])[0] == frame:
-            struct.pack_into('>H', pai, keys + 8 * k + 4, ntex); break
-    else: raise ValueError('frame %d not in the animation' % frame)
-    # 2. append the texture name: table grows by 4, strings by len+NUL padded to 4; everything behind shifts
+    table = list(struct.unpack('>%dI' % nent, pai[ent_off:ent_off + 4 * nent]))
     old_offs = list(struct.unpack('>%dI' % ntex, pai[20:20 + 4 * ntex])); strings = bytes(pai[20 + 4 * ntex:ent_off])
-    name = tex_name.encode() + b'\0'; name += b'\0' * (-len(name) % 4); delta = 4 + len(name)
-    new_offs = [o + 4 for o in old_offs] + [(ent_off - 20) + 4]
-    head = bytearray(pai[:20]); struct.pack_into('>I', head, 4, psize + delta); struct.pack_into('>H', head, 12, ntex + 1); struct.pack_into('>I', head, 16, ent_off + delta)
-    ent_table = struct.pack('>%dI' % nent, *[e + delta for e in table])
-    new_pai = bytes(head) + struct.pack('>%dI' % (ntex + 1), *new_offs) + strings + name + ent_table + bytes(pai[ent_off + 4 * nent:])
+    names = [bytes(pai[20 + o:pai.index(b'\0', 20 + o)]).decode() for o in old_offs]
+    for n in mapping.values():                                         # add the textures that are not listed yet
+        if n not in names:
+            b = n.encode() + b'\0'; b += b'\0' * (-len(b) % 4); names.append(n); strings += b
+    new_offs = []; pos = 4 * len(names)
+    for n in names: new_offs.append(pos); pos += len(n.encode()) + 1; pos += -(len(n.encode()) + 1) % 4
+    # the string area may carry its own padding: rebuild it from scratch
+    strings = b''.join((n.encode() + b'\0').ljust((len(n.encode()) + 1 + 3) // 4 * 4, b'\0') for n in names)
+    delta = (20 + 4 * len(names) + len(strings)) - ent_off
+    eo2 = ent_off + delta; ent_table = struct.pack('>%dI' % nent, *[e + delta for e in table])
+    body = bytes(pai[ent_off + 4 * nent:])                              # entries (relative offsets inside): unchanged
+    # key list of the icon entry (the last entry in the file)
+    for k, e in enumerate(table):
+        if bytes(pai[e:e + 12]) == b'P_CupIcon_00': icon_entry = e; break
+    else: raise ValueError('P_CupIcon_00 not found')
+    tag = icon_entry + 0x24; assert pai[tag:tag + 4] == b'FLTP'
+    nk, = struct.unpack('>H', pai[tag + 0x10:tag + 0x12]); keys0 = tag + 0x18
+    assert tag + 0x18 + 8 * nk == len(pai), 'the icon entry must be the last one'
+    cur = {int(struct.unpack('>f', pai[keys0 + 8 * i:keys0 + 8 * i + 4])[0]): struct.unpack('>H', pai[keys0 + 8 * i + 4:keys0 + 8 * i + 6])[0] for i in range(nk)}
+    last = max(max(cur), max(mapping)); fill = names.index(filler) if filler in names else cur.get(0, 0)
+    keys = b''
+    for f in range(last + 1):
+        t = names.index(mapping[f]) if f in mapping else cur.get(f, fill)
+        keys += struct.pack('>fHH', float(f), t, 0)
+    # entries part with the new key list; positions are relative to the old ent_off
+    icon_tag_rel = tag - ent_off - 4 * nent                              # where the key header sits inside `body`
+    body = bytearray(body[:icon_tag_rel + 0x18]) + keys
+    struct.pack_into('>H', body, icon_tag_rel + 0x10, last + 1)
+    head = bytearray(pai[:20]); struct.pack_into('>H', head, 8, max(frame_size, last + 1)); struct.pack_into('>H', head, 12, len(names)); struct.pack_into('>I', head, 16, eo2)
+    new_pai = bytes(head) + struct.pack('>%dI' % len(names), *new_offs) + strings + ent_table + bytes(body)
+    new_pai = bytearray(new_pai); struct.pack_into('>I', new_pai, 4, len(new_pai))
     out = bytearray(anim[:p]) + new_pai + anim[p + psize:]
-    struct.pack_into('>I', out, 12, len(out))
-    return bytes(out)
+    struct.pack_into('>I', out, 12, len(out)); return bytes(out)
 
 
-def install_icon(ctgp_szs, out_szs, bflim_data, icon_idx, name):
+def set_icons(ctgp_szs, out_szs, icons, filler='ym_CupIconBanana^h.bflim'):
+    """icons: {cup_id: (texture name without ^h.bflim, BFLIM bytes or None if the texture already exists)}; reads ctgp_szs, writes out_szs"""
     raw = szs.yaz0_decode(open(ctgp_szs, 'rb').read()); info, _, ver = szs.sarc_info(raw)
-    files = [(n, d) for n, d, h, a in info]; aligns = szs.sarc_aligns(raw)
-    tex = 'timg/%s^h.bflim' % name
-    files = [(n, d) for n, d in files if n != tex] + [(tex, bflim_data)]
-    aligns[tex] = max(0x20, bflim.footer(bflim_data)['align'])
-    names = dict(files); base_anim = names[ANIM]
-    if (name + '^h.bflim').encode() in base_anim: raise SystemExit('this icon name is already in the animation; use another name or start from the original ctgp.szs')
-    names[ANIM] = bflan_set_icon(base_anim, name + '^h.bflim', icon_frame(icon_idx))
-    out = szs.sarc_write(list(names.items()), aligns, ver)
-    open(out_szs, 'wb').write(szs.yaz0_store(out))
-    return len(out)
+    files = {n: d for n, d, h, a in info}; aligns = szs.sarc_aligns(raw)
+    for cid, (name, data) in icons.items():
+        if data is not None:
+            tex = 'timg/%s^h.bflim' % name; files[tex] = data; aligns[tex] = max(0x20, bflim.footer(data)['align'])
+    files[ANIM] = bflan_set_icons(files[ANIM], {cid: name + '^h.bflim' for cid, (name, d) in icons.items()}, filler)
+    open(out_szs, 'wb').write(szs.yaz0_store(szs.sarc_write(list(files.items()), aligns, ver)))
+
+
+def letter_icon(cup_name, ctgp_szs):
+    """a default icon for a new cup: the blue medallion with the first letters of its name; -> (texture name, BFLIM bytes)"""
+    import io, re
+    from PIL import ImageDraw, ImageFont
+    text = (re.sub(r'[^A-Za-z0-9]', '', cup_name)[:2] or '?').upper()
+    em = Image.new('RGBA', (256, 256), (0, 0, 0, 0)); d = ImageDraw.Draw(em)
+    font = None
+    for f in ('C:/Windows/Fonts/arialbd.ttf', 'C:/Windows/Fonts/arial.ttf'):
+        if os.path.exists(f): font = ImageFont.truetype(f, 170 if len(text) == 1 else 130); break
+    font = font or ImageFont.load_default()
+    w, h = d.textbbox((0, 0), text, font=font)[2:]; x, y = (256 - w) // 2, (256 - h) // 2 - 12
+    d.text((x + 6, y + 6), text, font=font, fill=(0, 0, 0, 150)); d.text((x, y), text, font=font, fill=(250, 250, 250, 255))
+    buf = io.BytesIO(); em.save(buf, 'PNG'); buf.seek(0)
+    data, _ = build(buf, ctgp_szs)
+    return 'ym_CupIcon' + (re.sub(r'[^A-Za-z0-9]', '', cup_name)[:12] or 'Cup'), data

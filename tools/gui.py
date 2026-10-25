@@ -77,10 +77,14 @@ class App(tk.Tk):
         p = os.path.join(self.content.get(), 'data.cup0')
         if not os.path.exists(p): return
         self.cups = cup0.parse(open(p, 'rb').read())
-        used = sum(c.type == 2 for c in self.cups)
-        self.info.config(text='CTGP only supports %d custom cups and %d are used%s. To get another cup, put your tracks in the slots of an existing one (select a slot, then "Add the track"); a cup always has 4 slots.' % (6, used, ' (full)' if used >= 6 else ''))
+        custom = sum(c.type in (2, 3, 5) for c in self.cups); room = 0; tmp = list(self.cups)
+        while True:
+            pl = cup0.next_free_cup(tmp)
+            if not pl: break
+            tmp.append(cup0.Cup(pl[0], pl[1], '', pl[2], [])); room += 1
+        self.info.config(text='%d custom cups, room for %d more (they go on extra pages of the cup screen: use L/R). A DLC cup that gets custom tracks becomes a custom cup too (up to 8). A new cup gets a letter icon: use "Cup icon" below to give it a picture.' % (custom, room))
         for i, c in enumerate(self.cups):
-            n = self.tree.insert('', 'end', iid='c%d' % i, text='%2d  %s%s' % (i, c.name, '' if c.type == 2 else '  (game DLC)'), open=c.type == 2)
+            n = self.tree.insert('', 'end', iid='c%d' % i, text='%2d  %s%s' % (i, c.name, '' if c.type == 2 else '  (game DLC: original tracks)'), open=c.type == 2)
             for k, t in enumerate(c.tracks): self.tree.insert(n, 'end', iid='c%d_%d' % (i, k), text='slot %d  %s' % (k, t.name or '(game)'), values=(t.dir, t.tag))
 
     def pick_picture(self, v, content, parent):
@@ -113,6 +117,9 @@ class App(tk.Tk):
                 if not v[2].get().strip(): return messagebox.showwarning('missing', 'every slot needs a course folder', parent=w)
                 t.name, t.tag, t.dir, t.picture = v[0].get().strip(), v[1].get(), v[2].get().strip(), v[3].get().strip()
             cup.name = name.get().strip() or cup.name
+            if cup.type == 1 and any(t.dir != 'Ginvalid' for t in cup.tracks):
+                if any(t.dir == 'Ginvalid' for t in cup.tracks): return messagebox.showwarning('all 4 slots needed', 'a DLC cup that holds custom tracks needs all 4 slots to be custom tracks (no Ginvalid)', parent=w)
+                cup0.make_playable(self.cups, cup, cup.tracks[0]); self.say('"%s" now holds custom tracks: it became a type 4 cup' % cup.name)
             p = os.path.join(content, 'data.cup0'); backup.save(content, p); open(p, 'wb').write(cup0.build(self.cups))
             self.say('cup "%s" saved; restart Cemu' % cup.name); w.destroy(); self.refresh()
         ttk.Button(w, text='Save', command=save).grid(row=7, column=0, **pad); ttk.Button(w, text='Cancel', command=w.destroy).grid(row=7, column=1, sticky='w', **pad)
@@ -145,9 +152,13 @@ class App(tk.Tk):
         if self.picture.get(): cmd += ['--picture', self.picture.get()]
         if self.extras.get(): cmd += ['--extras', 'mapobj,audio']
         def work():
-            before = {t.dir for cu in cup0.parse(open(os.path.join(content, 'data.cup0'), 'rb').read()) for t in cu.tracks}
+            old_cups = cup0.parse(open(os.path.join(content, 'data.cup0'), 'rb').read()); before = {t.dir for cu in old_cups for t in cu.tracks}; before_ids = {cu.cup_id for cu in old_cups}
             r = subprocess.run(cmd, capture_output=True, text=True); self.say((r.stdout + r.stderr).strip())
             if r.returncode: return
+            now = cup0.parse(open(os.path.join(content, 'data.cup0'), 'rb').read())
+            for nc in [x for x in now if x.cup_id not in before_ids]:                       # a new cup needs an icon texture for its id
+                szs_path = os.path.join(content, 'ui', 'cmn', 'ctgp.szs'); backup.save(content, szs_path)
+                nm, data = cupicon.letter_icon(nc.name, szs_path); cupicon.set_icons(szs_path, szs_path, {nc.cup_id: (nm, data)}); self.say('default icon made for cup "%s" (id %d)' % (nc.name, nc.cup_id))
             after = [t.dir for cu in cup0.parse(open(os.path.join(content, 'data.cup0'), 'rb').read()) for t in cu.tracks if t.dir not in before]
             if self.music.get() and after:
                 base = os.path.join(self.base.get(), 'audio', 'turbo_sound.bfsar') if self.base.get() else None
@@ -158,14 +169,14 @@ class App(tk.Tk):
 
     def set_icon(self):
         c, _ = self.selected(); content = self.content.get()
-        if c is None or self.cups[c].type != 2: return messagebox.showwarning('select a cup', 'select a CTGP cup in the list')
+        if c is None or self.cups[c].type == 1: return messagebox.showwarning('select a cup', 'select a custom cup in the list (not a DLC cup that still holds the original tracks)')
         if not self.emblem.get(): return messagebox.showwarning('missing', 'choose an emblem image')
         def work():
             szs_path = os.path.join(content, 'ui', 'cmn', 'ctgp.szs')
             backup.save(content, szs_path)
             name = 'ym_CupIcon' + re.sub(r'[^A-Za-z0-9]', '', self.cups[c].name)[:12]
             data, _ = cupicon.build(self.emblem.get(), szs_path)
-            n = cupicon.install_icon(szs_path, szs_path, data, self.cups[c].icon, name); self.say('icon installed in ctgp.szs (%d bytes); restart Cemu' % n)
+            cupicon.set_icons(szs_path, szs_path, {self.cups[c].cup_id: (name, data)}); self.say('icon installed for cup id %d in ctgp.szs; restart Cemu' % self.cups[c].cup_id)
         self.run(work)
 
 
