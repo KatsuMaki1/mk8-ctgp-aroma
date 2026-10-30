@@ -19,6 +19,9 @@ def _micro_index(x, y, bpp):
 
 
 def _micro_index_exact(x, y, bpp):
+    if bpp == 128:
+        b = [y & 1, x & 1, (x >> 1) & 1, (x >> 2) & 1, (y >> 1) & 1, (y >> 2) & 1]
+        return sum(v << i for i, v in enumerate(b))
     if bpp == 64:
         b = [x & 1, y & 1, (x >> 1) & 1, (x >> 2) & 1, (y >> 1) & 1, (y >> 2) & 1]
         return sum(v << i for i, v in enumerate(b))
@@ -187,3 +190,34 @@ def decode_rgba8(raw):
     for y in range(f['h']):
         for x in range(f['w']): o = addr_2d_thin1(x, y, 32, pitch, *sw); out[y, x] = list(raw[o:o + 4])
     return Image.fromarray(out, 'RGBA')
+
+def _bc3_linear(raw):
+    f=footer(raw);assert f['fmt']==23 and f['tile']==4
+    bw,bh,pitch=_bc1_geometry(f);sw=(f['swizzle_bits']&1,f['swizzle_bits']>>1)
+    out=bytearray(bw*bh*16)
+    for y in range(bh):
+        for x in range(bw):
+            src=addr_2d_thin1(x,y,128,pitch,*sw);dst=(y*bw+x)*16
+            out[dst:dst+16]=raw[src:src+16]
+    return bytes(out)
+
+def decode_bc3(raw):
+    f=footer(raw)
+    return Image.frombytes('RGBA',(f['w'],f['h']),_bc3_linear(raw),'bcn',3)
+
+def encode_bc3(image,template):
+    """Native BC3 part icon; four times smaller than an RGBA8 surface."""
+    import io
+    f=footer(template);assert f['fmt']==23 and f['tile']==4
+    im=image.convert('RGBA').resize((f['w'],f['h']),Image.Resampling.LANCZOS)
+    stream=io.BytesIO();im.save(stream,format='DDS',pixel_format='DXT5')
+    dds=stream.getvalue();assert dds[:4]==b'DDS ' and dds[84:88]==b'DXT5'
+    linear=dds[128:];bw,bh,pitch=_bc1_geometry(f);assert len(linear)==bw*bh*16
+    sw=(f['swizzle_bits']&1,f['swizzle_bits']>>1);out=bytearray(f['size'])
+    for y in range(bh):
+        for x in range(bw):
+            dst=addr_2d_thin1(x,y,128,pitch,*sw);src=(y*bw+x)*16
+            out[dst:dst+16]=linear[src:src+16]
+    result=bytes(out)+template[-40:]
+    if _bc3_linear(result)!=linear:raise ValueError('BC3 block roundtrip failed')
+    return result

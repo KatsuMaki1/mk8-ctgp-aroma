@@ -77,7 +77,12 @@ def set_labels(content, course, mapping):
             for p in range(tab, pool, 4):                  # every aligned word of the table area
                 w, = struct.unpack('>I', data[p:p + 4])
                 if w in repoint: struct.pack_into('>I', data, p, repoint[w]); done += 1
-            data += new_blob; data += bytes(-len(data) % 4); struct.pack_into('>I', data, 8, len(data)); data = bytes(data)
+            data += new_blob; data += bytes(-len(data) % 4)
+            struct.pack_into('>I', data, 8, len(data))
+            # The BARS header also declares the string pool's size. New label
+            # offsets must fall inside it, not just inside the enlarged file.
+            struct.pack_into('>I', data, 0x1C, len(data) - pool)
+            data = bytes(data)
         files.append((name, data))
     if not done: raise SystemExit('none of %s found in %s' % (', '.join(mapping), path))
     __import__('backup').save(content, path)
@@ -98,6 +103,13 @@ def auto_music(content, course, base_bfsar=None, log=print):
     game's turbo_sound.bfsar (DLC music) -> pBGM_WU_DESERT_N/_F. Returns the list of things done."""
     import zlib
     done = []
+    directory = os.path.join(content, 'course', course)
+    if not os.path.isdir(directory):
+        raise FileNotFoundError(2, 'Course folder does not exist', directory)
+    archive = os.path.join(directory, 'SNDG_%s.bars' % course)
+    if not os.path.isfile(archive):
+        log('Music not configured: %s is not included in this course. The cup/track import succeeded; stream names were left unchanged.' % os.path.basename(archive))
+        return done
     labels = [l for l in course_labels(content, course) if l.endswith(('_N', '_F'))]
     stems = sorted({l[:-2] for l in labels})
     known = open(base_bfsar, 'rb').read(0x60000) if base_bfsar and os.path.exists(base_bfsar) else None

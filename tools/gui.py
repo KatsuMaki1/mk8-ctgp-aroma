@@ -120,8 +120,11 @@ class App(tk.Tk):
             if cup.type == 1 and any(t.dir != 'Ginvalid' for t in cup.tracks):
                 if any(t.dir == 'Ginvalid' for t in cup.tracks): return messagebox.showwarning('all 4 slots needed', 'a DLC cup that holds custom tracks needs all 4 slots to be custom tracks (no Ginvalid)', parent=w)
                 cup0.make_playable(self.cups, cup, cup.tracks[0]); self.say('"%s" now holds custom tracks: it became a type 4 cup' % cup.name)
-            p = os.path.join(content, 'data.cup0'); backup.save(content, p); open(p, 'wb').write(cup0.build(self.cups))
-            self.say('cup "%s" saved; restart Cemu' % cup.name); w.destroy(); self.refresh()
+            try:
+                cup0.save_cups(content, self.cups)
+            except Exception as e:
+                return messagebox.showerror('save failed', str(e), parent=w)
+            self.say('cup "%s" saved; data.cup0 and custom/cup0 synchronized. Restart the game.' % cup.name); w.destroy(); self.refresh()
         ttk.Button(w, text='Save', command=save).grid(row=7, column=0, **pad); ttk.Button(w, text='Cancel', command=w.destroy).grid(row=7, column=1, sticky='w', **pad)
 
     def selected(self):

@@ -22,3 +22,6 @@ build/
 out/
 __pycache__/
 cemu/shot.png
+plugin/build_*/
+work/
+*.exe

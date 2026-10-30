@@ -32,6 +32,7 @@ CFLAGS	:=	-Wall -O2 -ffunction-sections \
 			$(MACHDEP)
 
 CFLAGS	+=	$(INCLUDE) -D__WIIU__ -D__WUT__ -D__WUPS__ 
+CFLAGS += $(EXTRA_CFLAGS)
 
 CXXFLAGS	:= $(CFLAGS) -std=gnu++20
 

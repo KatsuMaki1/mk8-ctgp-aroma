@@ -26,10 +26,10 @@ Delete `sd:/wiiu/environments/aroma/plugins/mk8-ct.wps` (and, if you want, `sd:/
 ## If something goes wrong
 - **The console does not boot or loops:** power it off, take the SD card out, delete `mk8-ct.wps` from `wiiu/environments/aroma/plugins/`,
   and boot again. The plugin never writes to the console's memory.
-- **The game starts normally but there are no CTGP cups:** create these empty files on the SD card to see what the plugin does
-  (a file with no content is enough; on Windows, create a text file and remove the `.txt`):
-  - `sd:/wiiu/mk8-ct/log_file` – the plugin writes `sd:/wiiu/mk8-ct/log.txt`.
-  - `sd:/wiiu/mk8-ct/notif` – the plugin shows an on-screen notification when it is done.
+- **The game starts normally but there are no CTGP cups:** plugin v0.5 writes `sd:/wiiu/mk8-ct/log.txt` and enables notifications by default.
+  No empty flag files are required. The v0.5 fix explicitly registers `WUPS_USE_WUT_DEVOPTAB()`; earlier builds used stdio without that filesystem initialization.
+  Replace the plugin, completely restart the Wii U, then launch MK8. If SD access fails, a notification reports errno when Notifications is available.
+  Unsupported application title IDs are logged before filtering, which also diagnoses forwarders/repacked titles.
   Check that the title id in the log is `000500001010ED00` and that "Verify" passed. If it says the game's memory does not match, your
   game is not the v81 EUR build this pack was made for.
 - **Isolating a problem** (empty files in `sd:/wiiu/mk8-ct/`): `no_code` (content only, no code patches), `no_content` (code patches only),
@@ -47,3 +47,6 @@ python tools/build_dist.py --content <Cemu update content> --base-game <MK8 base
   --v64-rpx Turbo_v64.rpx --v81-rpx Turbo_v81.rpx --plugin plugin/mk8-ct.wps --title-id 000500001010ED00 --out dist
 ```
 The plugin: install devkitPro + WUPS + `libcontentredirection` + `libnotifications`, then run `make` in `plugin/`.
+
+## Validated console checkpoint - 2026-10-26
+The user confirmed the v0.20 overlay works on a real Wii U. Install the complete v0.20 overlay (plugin, matching Data.bin, Features.json and custom/cup0) over the existing content pack. Earlier full archives still carry failing plugins and have not been rebuilt. The loader must use DCFlushRange after physical writes to executable pages. Do not expose data.cup0 through a root single-file layer: the game's directory scanner attempts to load it as an ordinary resource. CTGP instead reads custom/cup0; refresh this alias whenever editing the cup list. The user's broad success report is not a separate validation of every individual mod.

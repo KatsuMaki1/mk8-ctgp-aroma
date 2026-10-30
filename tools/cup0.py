@@ -52,6 +52,42 @@ def build(cups):
     return struct.pack('>4sII', b'CUP0', len(cups), 12 + len(recs)) + bytes(recs) + bytes(pool)
 
 
+def save_cups(content, cups):
+    """Save the editor file and Aroma's private CUP0 copy together."""
+    from pathlib import Path
+    import tempfile
+    import backup
+    content = Path(content)
+    payload = build(cups)
+    paths = [content / 'data.cup0', content / 'custom' / 'cup0']
+    staged = []
+    written = []
+    originals = {path: path.read_bytes() if path.exists() else None for path in paths}
+    staging_dir = content.parent / (content.name + '_backups')
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        # Stage both files outside game content before replacing either one.
+        for path in paths:
+            backup.save(content, path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=staging_dir, prefix='cup0-', delete=False) as f:
+                staged.append(Path(f.name))
+                f.write(payload)
+        for path, temporary in zip(paths, staged):
+            os.replace(temporary, path)
+            written.append(path)
+    except Exception:
+        for path in reversed(written):
+            if originals[path] is None:
+                path.unlink()
+            else:
+                path.write_bytes(originals[path])
+        raise
+    finally:
+        for temporary in staged:
+            temporary.unlink(missing_ok=True)
+
+
 def listing(cups):
     for i, c in enumerate(cups):
         kind = 'DLC ' if c.type == 1 else 'CTGP'
@@ -110,7 +146,7 @@ def import_extras(tree, content, kinds, overwrite=False, course=None):
                         rel = os.path.relpath(os.path.join(dp, f), root); dst = os.path.join(content, rel)
                         parts = rel.replace(os.sep, '/').split('/')
                         if course and parts[0] == 'mapobj' and len(parts) == 3 and parts[1].startswith('VR') and f.endswith('.bfres'):
-                            try: __import__('skies').isolate(content, course, parts[1], os.path.join(dp, f)); n += 1; continue   # a sky: private copy per track
+                            try: __import__('skies').install_original(content, course, parts[1], os.path.join(dp, f)); n += 1; continue
                             except SystemExit as e: print('sky %s kept shared (%s)' % (parts[1], e))
                         if os.path.exists(dst) and not overwrite: skipped.append(rel.replace(os.sep, '/')); continue
                         os.makedirs(os.path.dirname(dst), exist_ok=True); shutil.copy2(os.path.join(dp, f), dst); n += 1
@@ -184,10 +220,10 @@ def main():
         print('new cup %d "%s" on page type %d (position %d, id %d): the track fills all 4 slots for now; replace slots 1-3 with --cup %d --slot 1..3' % (a.cup, a.new_cup, t, icon, cid, a.cup))
         print('note: its icon needs a texture: cupicon.py / the GUI creates one for the new cup id')
     if not (0 <= a.cup < len(cups) and a.slot in range(4)): sys.exit('--cup/--slot out of range (see `list`)')
-    __import__('backup').save(a.content, path)
     cups[a.cup].tracks[a.slot] = track
     if make_playable(cups, cups[a.cup], track): print('this DLC cup now holds custom tracks: it became a type 4 cup (the other slots use the same track until you replace them)')
-    open(path, 'wb').write(build(cups))
+    save_cups(a.content, cups)
+    print('Aroma copy custom/cup0 synchronized with data.cup0')
     print('cup %d slot %d is now "%s" (%s); previous data.cup0 saved in <content>_backups' % (a.cup, a.slot, a.name, new_dir))
 
 
