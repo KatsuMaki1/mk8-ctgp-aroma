@@ -40,7 +40,7 @@ static const struct BoltString *bolt_route(const struct BoltString *path,struct 
     if(starts(p,"course/"))bolt_active=is_bolt_course(p+7);
     if(bolt_active)for(u32 i=0;i<sizeof(assets)/sizeof(assets[0]);i++) {
         if(equal(p,assets[i])) {
-            out->text=private_assets[i];out->vtable=path->vtable;bolt_asset_redirects++;
+            out->text=private_assets[i];out->vtable=0x100ffbccu;bolt_asset_redirects++;
             return out;
         }
     }

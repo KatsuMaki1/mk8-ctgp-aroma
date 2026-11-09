@@ -42,8 +42,8 @@ def plan(archive,baseline,game,dlc):
         menu={h:d for n,d,h in szs.sarc_read(szs.yaz0_decode(z.read(ROOT+'content/ui/cmn/menu.szs')))}
         folders={n.split('/')[-2]:n.rsplit('/',1)[0]+'/' for n in names if n.endswith('/course_model.szs')}
         old=cup0.parse((baseline/'data.cup0').read_bytes())
-        # Three plain custom pages, avoiding a gap or changing the Booster page.
-        places=[(3,i,36+i) for i in range(8)]+[(4,i,44+i) for i in range(4)]
+        # The native CTGP cup renderer supports all twelve positions per page.
+        places=[(3,i,36+i) for i in range(12)]
         if any(c.type in (3,4) for c in old):raise ValueError('Destination custom pages already used')
         ids={c.cup_id for c in old}
         if ids & {x[2] for x in places}:raise ValueError('Cup animation frame collision')

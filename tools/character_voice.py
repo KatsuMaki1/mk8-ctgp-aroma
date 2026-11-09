@@ -86,25 +86,26 @@ def make_strings(names,ids):
     block.extend(bytes(-len(block)%32));struct.pack_into('>I',block,4,len(block));struct.pack_into('>i',block,20,tree-8)
     return bytes(block)
 
-def clone_sounds(archive,mapping):
-    names=archive.names+list(mapping.values());ids=dict(archive.ids)
-    for n,(old,new) in enumerate(mapping.items()):
+def clone_sounds(archive,mapping,allowed_kinds=(0x2202,)):
+    pairs=list(mapping.items()) if isinstance(mapping,dict) else list(mapping)
+    names=archive.names+[new for old,new in pairs];ids=dict(archive.ids)
+    for n,(old,new) in enumerate(pairs):
         if new in ids:raise ValueError('R.O.B. audio label already exists')
         item=ids[old]
         if item>>24!=1:raise ValueError('Only sound labels can be cloned')
         ids[new]=(item&0xff000000)|(archive.count+n)
     strings=make_strings(names,ids)
-    original=archive.info;table=archive.table;end_table=table+4+archive.count*8;delta=len(mapping)*8
+    original=archive.info;table=archive.table;end_table=table+4+archive.count*8;delta=len(pairs)*8
     info=bytearray(original[:end_table])+bytearray(delta)+original[end_table:]
-    struct.pack_into('>I',info,table,archive.count+len(mapping))
+    struct.pack_into('>I',info,table,archive.count+len(pairs))
     for i,start in enumerate(archive.records):struct.pack_into('>i',info,table+8+i*8,start+delta-table)
     for at in range(16,72,8):
         old=s32(original,at+4)
         if old not in (-1,0):struct.pack_into('>i',info,at+4,old+delta)
-    for n,(old,new) in enumerate(mapping.items()):
+    for n,(old,new) in enumerate(pairs):
         index=archive.ids[old]&0xffffff;record=bytearray(archive.sound(index))
-        if struct.unpack_from('>H',record,12)[0]!=0x2202 or not u32(record,20)&1:
-            raise ValueError('Expected a named wave sound: '+old)
+        if struct.unpack_from('>H',record,12)[0] not in allowed_kinds or not u32(record,20)&1:
+            raise ValueError('Unexpected sound kind or missing name: '+old)
         struct.pack_into('>I',record,24,len(archive.names)+n)
         start=len(info);info.extend(record)
         struct.pack_into('>HHi',info,table+4+(archive.count+n)*8,0x2200,0,start-table)
@@ -131,7 +132,7 @@ def rename_bar(data):
                     replacement=text.replace(b'MOR',b'ROB')
                     if len(replacement)!=len(text):raise ValueError('Voice name length changed')
                     mutable[at:end]=replacement
-                    if text.startswith(b'pVO_') and not text.endswith(b'.bfwav'):labels[text.decode()]=replacement.decode()
+                    if text.startswith((b'pVO_',b'pSE_HORN_')) and not text.endswith(b'.bfwav'):labels[text.decode()]=replacement.decode()
                 at=end+1
             payload=bytes(mutable)
         elif name.endswith('.bfwav'):old_waves[new_name]=assets.digest(payload)
@@ -204,6 +205,87 @@ def audio_label(raw,label='ROB'):
     check=tables.read_sections(bytes(result))[1]
     if any(a!=b for (t,a),(_,b) in zip(items,check) if t!=b'DRSE'):raise ValueError('Unrelated audio parameter changed')
     return bytes(result)
+
+def bind_bar_ids(data,archive,label_aliases=None):
+    """Bind BARS records to the installed BFSAR, not the replacement donor IDs.
+
+    A v0x54 BARS record stores an explicit low-24-bit sound ID at +0x24.
+    Changing its label alone does not change which sound the bank overrides.
+    Waveform names and payloads are intentionally retained.
+    """
+    entries=szs.sarc_read(data);output=[];changes=[];found=False
+    for name,payload,h in entries:
+        if name!='_param.bin':output.append((name,payload));continue
+        found=True;raw=bytearray(payload)
+        if raw[:8]!=b'BARS\xfe\xff\x00\x20' or u32(raw,12)!=0x54:
+            raise ValueError('Unexpected BARS record format')
+        start,length,pool=u32(raw,16),u32(raw,20),u32(raw,24)
+        if start!=32 or length%84 or pool!=start+length or pool+u32(raw,28)!=len(raw):
+            raise ValueError('Unexpected BARS record directory')
+        for at in range(start,pool,84):
+            label_at=pool+u32(raw,at)
+            if not pool<=label_at<len(raw):raise ValueError('Invalid BARS label offset')
+            end=raw.index(0,label_at);old=raw[label_at:end].decode()
+            label=(label_aliases or {}).get(old,old)
+            if len(label)!=len(old):raise ValueError('BARS alias must preserve string offsets')
+            sound=archive.lookup(label)
+            if sound is None or sound>>24!=1:raise ValueError('Missing BFSAR sound: '+label)
+            before=u32(raw,at+36);after=sound&0xffffff
+            raw[label_at:end]=label.encode();struct.pack_into('>I',raw,at+36,after)
+            changes.append({'label':label,'old_label':old,'before':before,'after':after})
+        output.append((name,bytes(raw)))
+    if not found:raise ValueError('Missing BARS parameters')
+    result=szs.sarc_write(output,szs.sarc_aligns(data,32),struct.unpack_from('>H',data,16)[0])
+    checked={n:p for n,p,h in szs.sarc_read(result)}
+    for name,payload,h in entries:
+        if name!='_param.bin' and checked[name]!=payload:raise ValueError('Audio sample changed')
+    return result,changes
+
+def silent_fwav(raw):
+    """Mute a release sample while retaining its valid FWAV format/duration."""
+    if raw[:6]!=b'FWAV\xfe\xff':raise ValueError('Expected big endian FWAV')
+    info=u32(raw,24);audio=u32(raw,36)
+    if raw[info:info+4]!=b'INFO' or raw[audio:audio+4]!=b'DATA':raise ValueError('Missing FWAV blocks')
+    result=bytearray(raw);encoding=raw[info+8]
+    if encoding not in (0,1,2):raise ValueError('Unsupported FWAV encoding')
+    end=audio+u32(raw,audio+4)
+    if end>len(raw):raise ValueError('Truncated FWAV data')
+    result[audio+8:end]=bytes(end-audio-8)
+    if encoding==2:
+        table=info+28;count=u32(raw,table)
+        for i in range(count):
+            channel=table+u32(raw,table+8+i*8);dsp=channel+u32(raw,channel+12)
+            if not info<=dsp or dsp+46>info+u32(raw,info+4):raise ValueError('Invalid DSP context')
+            result[dsp+32:dsp+46]=bytes(14)
+    return bytes(result)
+
+def authored_normal_horn(data):
+    """Use the mod's custom special horn for normal presses, not donor samples."""
+    entries=szs.sarc_read(data);files={n:p for n,p,h in entries};param=files['_param.bin']
+    start,pool,stride=u32(param,16),u32(param,24),u32(param,12)
+    if stride!=84:raise ValueError('Unknown BARS record size')
+    horns={}
+    for at in range(start,pool,stride):
+        p=pool+u32(param,at);label=param[p:param.index(bytes(1),p)].decode()
+        if label.startswith('pSE_HORN_MORTON_'):
+            p=pool+u32(param,at+4);name=param[p:param.index(bytes(1),p)].decode()
+            horns[label.rsplit('MORTON_',1)[1]]=(at,name)
+    if set(horns)!=set(('ON','OFF','ON_SP')):raise ValueError('Incomplete private horn bank')
+    on,on_name=horns['ON'];special,special_name=horns['ON_SP'];off,off_name=horns['OFF']
+    if len({on_name,special_name,off_name})!=3:raise ValueError('Horn samples unexpectedly shared')
+    special_sample=files[special_name];files[on_name]=special_sample
+    files[off_name]=silent_fwav(files[off_name])
+    mutable=bytearray(param)
+    # Retain the ON sound ID and its label; use the authored special's playback
+    # settings with its waveform. No other voice or horn event is modified.
+    mutable[on+52:on+84]=param[special+52:special+84];files['_param.bin']=bytes(mutable)
+    result=szs.sarc_write(list(files.items()),szs.sarc_aligns(data,32),struct.unpack_from('>H',data,16)[0])
+    check={n:p for n,p,h in szs.sarc_read(result)}
+    if check[on_name]!=special_sample:raise ValueError('Custom horn sample readback differs')
+    for name,payload,h in entries:
+        if name not in ('_param.bin',on_name,off_name) and check[name]!=payload:raise ValueError('Unrelated voice changed')
+    return result,{'normal_wave':on_name,'authored_wave':special_name,'release_wave':off_name,
+                   'authored_sha256':assets.digest(special_sample)}
 
 def reaction_groups(raw,sound_aliases=None):
     """Append the Morton reaction groups under ROB names, retaining weights."""

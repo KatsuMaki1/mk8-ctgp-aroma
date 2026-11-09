@@ -15,7 +15,7 @@ extern u32 original_char_icon(u32,const u32*,u32);
 extern void original_char_name(u32,u32,const u32*,u32);
 extern void original_char_finalise(u32,u32);
 extern void original_char_texture_name(u32,u32,const u32*,const u32*,u32);
-extern void original_char_sound_lookup(u32,u32,const char*);
+extern u32 original_char_sound_lookup(u32,u32,const char*);
 extern void original_char_audio_init(u32);
 extern void original_char_menu_voice(u32,u32);
 static u8 rob_menu_selected[4];
@@ -45,24 +45,77 @@ void character_audio_init(u32 actor) {
     character_voice_bank_state[3]=W(actor,0x220);
 #endif
 }
+/* Horn labels are built per driver inside the horn routine; remember whether it runs for R.O.B. */
+extern void original_char_horn_label(u32);
+extern u32 original_char_menu_play(u32,const char*);
+static volatile u32 horn_for_rob;
+void character_horn_label(u32 actor) {
+    u32 driver=W(actor,0x20c);
+    u32 previous=horn_for_rob;
+    horn_for_rob=driver && FN(0x021941a8,u32(*)(u32))(driver)==37;
+    original_char_horn_label(actor);
+    horn_for_rob=previous;
+}
 /* Read-only host diagnostic: retain requested labels and resolved sound IDs. */
 volatile u32 character_voice_trace_count;
 struct VoiceTrace {u32 actor,id;char label[88];};
-volatile struct VoiceTrace character_voice_trace[12];
-void character_sound_lookup(u32 actor,u32 out,const char *label) {
-    original_char_sound_lookup(actor,out,label);
-    if(!label || label[0]!='p' || label[1]!='V' || label[2]!='O')return;
+volatile struct VoiceTrace character_voice_trace[4];
+volatile u32 character_horn_trace_count;
+struct HornTrace {u32 id;char asked[44];char used[44];};
+volatile struct HornTrace character_horn_trace[6];
+static u32 is_horn(const char *l) {
+    const char *p="pSE_HORN_";
+    for(u32 i=0;i<9;i++)if(l[i]!=p[i])return 0;
+    return 1;
+}
+static void copy_label(volatile char *to,const char *from,u32 size) {
+    u32 i=0;for(;i<size-1 && from[i];i++)to[i]=from[i];to[i]=0;
+}
+u32 character_sound_lookup(u32 actor,u32 out,const char *label) {
+    char buffer[64];const char *used=label;
+    const char *tail=label?label+9:0;
+    if(horn_for_rob && label && is_horn(label)) {
+        while(*tail && !(tail[0]=='_' && tail[1]=='O'))tail++;
+    }
+    if(horn_for_rob && label && is_horn(label) && *tail) {
+        /* The native SLink event is MOR; its sample names are MORTON.
+         * The ROB actor's attached bank supplies its own samples for those
+         * existing sound IDs. Keep the unmodified kart horn event separate. */
+        u32 i=0;const char *prefix="pSE_HORN_MOR";
+        for(;prefix[i];i++)buffer[i]=prefix[i];
+        for(u32 j=0;tail[j] && i<63;j++)buffer[i++]=tail[j];
+        buffer[i]=0;used=buffer;
+    }
+    u32 result=original_char_sound_lookup(actor,out,used);
+    if(label && is_horn(label)) {
+        u32 n=character_horn_trace_count;
+        character_horn_trace[n%6].id=result;
+        copy_label(character_horn_trace[n%6].asked,label,44);
+        copy_label(character_horn_trace[n%6].used,used,44);
+        character_horn_trace_count=n+1;
+    }
+    if(!label || label[0]!='p' || label[1]!='V' || label[2]!='O')return result;
     u32 n=character_voice_trace_count;
-    if(n>=12)return;
+    if(n>=4)return result;
     character_voice_trace[n].actor=actor;
-    character_voice_trace[n].id=out?W(out,0):0xffffffffu;
-    u32 i=0;for(;i<87 && label[i];i++)character_voice_trace[n].label[i]=label[i];
-    character_voice_trace[n].label[i]=0;
+    character_voice_trace[n].id=result;
+    copy_label(character_voice_trace[n].label,label,88);
     character_voice_trace_count=n+1;
+    return result;
+}
+/* Last voice labels started by name (menu selection goes through here). */
+volatile u32 character_menu_play_count;
+volatile char character_menu_play_trace[4][32];
+u32 character_menu_play(u32 handle,const char *label) {
+    if(label && label[0]=='p' && label[1]=='V' && label[2]=='O') {
+        copy_label(character_menu_play_trace[character_menu_play_count&3],label,32);
+        character_menu_play_count++;
+    }
+    return original_char_menu_play(handle,label);
 }
 extern void previous_char_recipe(u32,u32,const u32*);
 extern void previous_char_prefix(u32,const char*,u32);
-extern u32 previous_char_vehicle_icon(u32,u32,u32,u32,u32);
+extern u32 previous_char_vehicle_icon(u32,u32,u32,const u32*,u32);
 __attribute__((used)) const char character_slots_marker[]="MK8_INDEPENDENT_ROB_EUR81_V1";
 __attribute__((used)) const char character_resource_name[]="ROB";
 static u32 pages[16];
@@ -94,14 +147,18 @@ static u32 heap_at(u32 index) {
     return buffer && W(buffer,0)>index && W(buffer,4)?W(W(buffer,4),index*4):0;
 }
 struct NativeString {const char *text;u32 vtable;};
+#include "rob_vehicle_icons.h"
 static u32 rob_icon(void) {
     u32 heap=heap_at(4),resource=heap?W(heap,4):0;
     struct NativeString name={"ui/cmn/a_menu/timg/tc_Chara_ROB^l.bflim",0x100d25d0};
     return resource?FN(0x0253d47c,u32(*)(u32,const struct NativeString*))(resource,&name):0;
 }
-u32 character_vehicle_icon(u32 object,u32 kind,u32 id,u32 driver,u32 color) {
+u32 character_vehicle_icon(u32 object,u32 kind,u32 id,const u32 *driver,u32 color) {
     const char *path=0;
-    if(kind==0 && driver==37) {
+    u32 own=driver && *driver==37;
+    if(own && kind==0 && id<sizeof(rob_body_fallbacks)/sizeof(rob_body_fallbacks[0]))path=rob_body_fallbacks[id];
+    if(own && kind==2 && id<sizeof(rob_wing_fallbacks)/sizeof(rob_wing_fallbacks[0]))path=rob_wing_fallbacks[id];
+    if(kind==0 && own) {
         if(id==0)path="ui/cmn/a_menu/timg/ct_ROB_K_Std^q.bflim";
         if(id==1)path="ui/cmn/a_menu/timg/ct_ROB_K_Skl^q.bflim";
         if(id==14)path="ui/cmn/a_menu/timg/ct_ROB_B_Std^q.bflim";
@@ -113,6 +170,7 @@ u32 character_vehicle_icon(u32 object,u32 kind,u32 id,u32 driver,u32 color) {
         u32 texture=resource?FN(0x0253d47c,u32(*)(u32,const struct NativeString*))(resource,&name):0;
         if(texture)return texture;
     }
+    if(own){u32 donor=28;return previous_char_vehicle_icon(object,kind,id,&donor,0);}
     return previous_char_vehicle_icon(object,kind,id,driver,color);
 }
 

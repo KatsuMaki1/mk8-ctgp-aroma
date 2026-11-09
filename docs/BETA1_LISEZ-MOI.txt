@@ -1,0 +1,39 @@
+CTGP-Cafe MK8 Wii U (Aroma) - BETA 1c - serveur Protarium (2026-11-09)
+=====================================================================
+
+STATUT: BETA DE TEST. Teste sur Cemu, PAS ENCORE sur une vraie Wii U. Sauvegarde ta carte SD avant.
+
+CE QU'IL FAUT
+- Wii U sous Aroma (avec ContentRedirection et Notifications, inclus dans Aroma).
+- Mario Kart 8 EUROPE + mise a jour v81 (titre 000500001010ED00). Les autres regions/versions ne sont pas supportees.
+- Un compte Protarium Network (PNID) sur la console.
+- Carte SD FAT32 avec ~5 Go libres.
+
+INSTALLATION
+1. Sauvegarde ta carte SD.
+2. Copie le CONTENU du dossier "sd" a la RACINE de la SD (fusionner / remplacer).
+   Ca installe:
+   - sd:/wiiu/environments/aroma/plugins/mk8-ct.wps           (CTGP-Cafe loader v0.29)
+   - sd:/wiiu/environments/aroma/plugins/Inkay-pretendo.wps   (plugin reseau Protarium, release r17)
+   - sd:/wiiu/environments/aroma/modules/Inkay-pretendo.wms   (module reseau Protarium, release r17)
+   - sd:/cafeloader/...                                       (code et contenu CTGP)
+3. Une seule copie de chaque plugin doit etre active: supprime les anciens Inkay / Pretendo si tu en avais.
+4. Redemarre la console dans Aroma et lance Mario Kart 8.
+
+EN LIGNE
+- Online > Worldwide: tu es mis avec les autres joueurs CTGP (pool separe des joueurs normaux).
+- Les cartes du vote et la roulette affichent et chargent les circuits CTGP (un CT par emplacement de circuit natif).
+- Le drapeau de ton profil vient du choix de pays dans Options CTGP.
+
+PROBLEMES CONNUS (BETA)
+- Course en ligne: une "erreur de communication" peut couper la course apres 1-2 minutes (vu sur Cemu, aussi sur Pretendo).
+  Dis-nous si ca arrive sur vraie console.
+- Le drapeau des AUTRES joueurs peut ne pas s'afficher.
+- Aroma: le pays choisi dans Options CTGP n'est pas force cote compte nn::act (hooks d'import retires en BETA1b).
+- Pont de Londres: affiche noir et immobile.
+- Ghosts en ligne des circuits CTGP: pas encore separes par circuit / 150-200cc / mini-turbo rose.
+- Le plugin charge un code CTGP plus gros qu'avant (jusqu'a 2 Mo). Si la console refuse, le jeu demarre sans CTGP et le journal
+  sd:/wiiu/mk8-ct/log.txt l'indique ("unsupported pack" ou "code destination occupied") - envoie-nous ce fichier.
+
+DESINSTALLER
+Supprime sd:/wiiu/environments/aroma/plugins/mk8-ct.wps (et si tu veux sd:/cafeloader). Garde Inkay si tu utilises Protarium pour d'autres jeux.

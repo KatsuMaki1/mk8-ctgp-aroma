@@ -25,3 +25,8 @@ cemu/shot.png
 plugin/build_*/
 work/
 *.exe
+# private ops notes (VPS, ssh) and local backups
+handoff.md
+HANDOFF*.md
+docs/handoff_history/
+*.bak

@@ -148,7 +148,7 @@ def decode_bc1(raw, swz=None):
     return Image.fromarray(out[:f['h'], :f['w']], 'RGBA')
 
 
-def encode_bc1(img, template, swz=None):
+def encode_bc1(img, template, swz=None, endpoints='box'):
     """PIL image -> BC1 BFLIM bytes (template gives footer: size/format/alignment/swizzle). Simple range-fit compressor."""
     f = footer(template); bw, bh, pitch = _bc1_geometry(f)
     swz = swz or (f['swizzle_bits'] & 1, f['swizzle_bits'] >> 1)
@@ -161,6 +161,12 @@ def encode_bc1(img, template, swz=None):
         for bx in range(bw):
             blk = a[by * 4:by * 4 + 4, bx * 4:bx * 4 + 4].reshape(16, 3)
             lo, hi = blk.min(0), blk.max(0)
+            if endpoints == 'pair':  # the two most distant colours actually present (better for flat two-colour blocks)
+                best = -1
+                for ia in range(16):
+                    for ib in range(ia + 1, 16):
+                        dd = ((blk[ia] - blk[ib]) ** 2).sum()
+                        if dd > best: best, lo, hi = dd, blk[ia], blk[ib]
             c0, c1 = to565(hi), to565(lo)
             if c0 < c1: c0, c1 = c1, c0
             if c0 == c1: idx = 0

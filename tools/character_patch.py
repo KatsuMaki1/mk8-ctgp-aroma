@@ -12,17 +12,17 @@ HOOKS={'char_create':0x025d623c,'char_setup':0x025d65f4,
        'char_available':0x025d6470,'char_button':0x0257c49c,
        'char_icon':0x0255a668,'char_name':0x025d269c,'char_finalise':0x0242fc70,
        'char_texture_name':0x0255a6e0,'char_sound_lookup':0x02060fb8,'char_audio_init':0x02068904,
-       'char_menu_voice':0x020cc99c}
+       'char_menu_voice':0x020cc99c,'char_horn_label':0x02067fb8,'char_menu_play':0x020342a4}
 WORDS={'char_create':0x9421ffb0,'char_setup':0x9421feb8,
        'char_available':0x7c0802a6,'char_button':0x9421ff60,
        'char_icon':0x81440000,'char_name':0x9421ffc0,'char_finalise':0x7c0802a6,
        'char_texture_name':0x9421ffa0,'char_sound_lookup':0x80630004,'char_audio_init':0x9421ff08,
-       'char_menu_voice':0x9421ff20}
+       'char_menu_voice':0x9421ff20,'char_horn_label':0x9421fe18,'char_menu_play':0x7c0802a6}
 TARGETS={'char_create':'character_create','char_setup':'character_setup',
          'char_available':'character_available','char_button':'character_button',
          'char_icon':'character_icon','char_name':'character_name','char_finalise':'character_finalise',
          'char_texture_name':'character_texture_name','char_sound_lookup':'character_sound_lookup','char_audio_init':'character_audio_init',
-         'char_menu_voice':'character_menu_voice'}
+         'char_menu_voice':'character_menu_voice','char_horn_label':'character_horn_label','char_menu_play':'character_menu_play'}
 HORN=0x02623d30
 AUDIO_CLASS=0x0206897c
 VOICE_PREFIX_BOUND=0x02067798

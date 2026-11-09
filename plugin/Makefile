@@ -23,7 +23,7 @@ TARGET		:=	mk8-ct
 BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data
-INCLUDES	:=	source
+INCLUDES	:=	source include
 
 #-------------------------------------------------------------------------------
 # options for code generation

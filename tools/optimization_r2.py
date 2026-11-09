@@ -55,7 +55,7 @@ def prepare():
    model('export',folder);model('textures',folder)
    textures=json.loads((folder/'profile.json').read_text())['textures'];resized=[]
    for file in (folder/'textures').glob('*.basebc'):
-    t=textures[int(file.stem)];name=t['Name'].lower();readable=any(s in name for s in ('road','ground','asphalt','logo','sign','arrow','text','start','line','zebra'));bake=any(s in name for s in ('bake','light','shadow','aomap')) or name in ('b l','b');detail=any(s in name for s in ('_nrm','_spm','normal','specular'));cap=512 if detail else 1024 if readable or bake else 512
+    t=textures[int(file.stem)];name=t['Name'].lower();readable=any(s in name for s in ('road','ground','asphalt','logo','sign','arrow','text','start','line','zebra'));bake=any(s in name for s in ('bake','light','shadow','aomap')) or name in ('b l','b');detail=any(s in name for s in ('_nrm','_spm','normal','specular'));cap=(512 if readable or bake else 256) if ENV.get('CTGP_OPT_PROFILE')=='R3' else (512 if detail else 1024 if readable or bake else 512)
     drop=0
     while max(t['Width']>>drop,t['Height']>>drop)>cap:drop+=1
     codec=1 if t['format']=='T_BC1_UNorm' else 3

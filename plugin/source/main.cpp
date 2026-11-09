@@ -30,13 +30,14 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include "dlc_fs.h"
 
 WUPS_PLUGIN_NAME("CTGP-Cafe Loader");
 WUPS_PLUGIN_DESCRIPTION("Custom tracks for Mario Kart 8: patches the game at boot and loads the CTGP-Cafe content");
 #ifdef CTGP_PREFLIGHT_ONLY
 WUPS_PLUGIN_VERSION("v0.14-preflight");
 #elif defined(CTGP_CRASH_CAPTURE)
-WUPS_PLUGIN_VERSION("v0.20-resource-trace");
+WUPS_PLUGIN_VERSION("v0.29-protarium-ww");
 #else
 WUPS_PLUGIN_VERSION("v0.13-dynamic-kernel");
 #endif
@@ -119,7 +120,7 @@ static BOOL showCrash(OSContext *context,const char *kind) {
 #ifdef CTGP_PREFLIGHT_ONLY
     char *out=crashText(g_crashText,"CTGP v0.14 preflight - NO INJECTION\n");
 #else
-    char *out=crashText(g_crashText,"CTGP v0.20 resource trace\n");
+    char *out=crashText(g_crashText,"CTGP v0.28 BCP resource trace\n");
 #endif
     out=crashText(out,kind);*out++='\n';
     out=crashHex(out,"PC=",context->srr0);
@@ -131,6 +132,42 @@ static BOOL showCrash(OSContext *context,const char *kind) {
     out=crashHex(out,"R18=",context->gpr[18]);
     out=crashHex(out,"R25=",context->gpr[25]);
     out=crashHex(out,"R28=",context->gpr[28]);
+    if(context->srr0==0x0E9E3E4C) {
+        out=crashHex(out,"R3=",context->gpr[3]);out[-1]=' ';
+        out=crashHex(out,"Actor=",context->gpr[31]);
+        uint32_t actor=context->gpr[31];
+        if(actor && crashReadable(actor,8)) {
+            out=crashHex(out,"Model=",*(volatile const uint32_t*)actor);out[-1]=' ';
+            out=crashHex(out,"Animation=",*(volatile const uint32_t*)(actor+4));
+        }
+        out=crashText(out,"Course: ");out=crashText(out,g_customFsCourse,150);*out++='\n';
+    }
+    if(context->srr0==0x0E9D2BC0) {
+        out=crashHex(out,"R3=",context->gpr[3]);out[-1]=' ';
+        out=crashHex(out,"Actor=",context->gpr[31]);
+        uint32_t actor=context->gpr[31];
+        if(actor && actor<=UINT32_MAX-0x22C && crashReadable(actor,4) && crashReadable(actor+0x224,8)) {
+            out=crashHex(out,"MainModel=",*(volatile const uint32_t*)actor);out[-1]=' ';
+            out=crashHex(out,"GateBar=",*(volatile const uint32_t*)(actor+0x224));
+        }
+        out=crashText(out,"Course: ");out=crashText(out,g_customFsCourse,150);*out++='\n';
+        out=crashText(out,"Gate file: ");out=crashText(out,g_customFsTicketGate,150);*out++='\n';
+    }
+    if(context->srr0==0x0E8C7660) {
+        out=crashHex(out,"R3=",context->gpr[3]);out[-1]=' ';
+        out=crashHex(out,"R4=",context->gpr[4]);out[-1]=' ';
+        out=crashHex(out,"R5=",context->gpr[5]);
+        out=crashHex(out,"R6=",context->gpr[6]);out[-1]=' ';
+        out=crashHex(out,"R27=",context->gpr[27]);out[-1]=' ';
+        out=crashHex(out,"R30=",context->gpr[30]);
+        // The verified v81 caller uses this course-heap holder. Read only;
+        // never call allocator/FS functions from an exception callback.
+        uint32_t holder=context->gpr[27];
+        if(holder && holder<=UINT32_MAX-0x3D34 && crashReadable(holder+0x3D1C,0x18)) {
+            out=crashHex(out,"CourseHeap=",*(volatile const uint32_t*)(holder+0x3D1C));out[-1]=' ';
+            out=crashHex(out,"CourseResource=",*(volatile const uint32_t*)(holder+0x3D28));
+        }
+    }
     uint32_t frame=context->gpr[1];
     for(unsigned i=0;i<8;i++) {
         if(!crashReadable(frame,4))break;
@@ -151,6 +188,10 @@ static BOOL showCrash(OSContext *context,const char *kind) {
         }
         out=crashPath(out,"Name: ",context->gpr[25]);
     }
+    out=crashHex(out,"FS redirects=",g_customFsRedirects);out[-1]=' ';
+    out=crashHex(out,"FS status=",uint32_t(g_customFsStatus));
+    out=crashText(out,"FS last: ");out=crashText(out,g_customFsLast,150);*out++='\n';
+    out=crashText(out,"FS failed: ");out=crashText(out,g_customFsFailed,150);*out++='\n';
     out=crashText(out,"Stage: ");out=crashText(out,g_stage);*out++='\n';
     out=crashText(out,"Last: ");out=crashText(out,g_last);*out=0;
     OSFatal(g_crashText);
@@ -184,6 +225,7 @@ static const uint64_t MK8_TIDS[] = {0x000500001010EB00ull, 0x000500001010EC00ull
 // One layer per pack directory (skip_<name> disables it) instead of merging all of /vol/content.
 static const char *PACK_DIRS[] = {"course", "mapobj", "ui", "custom", "charger", "audio", "common", "driver", "kart",
                                 "driver_anim", "driver_tex", "race_common", "ui3d", "trophy", "ghost", "data"};
+// Only base content layers; AOC ownership/detection remains native.
 static CRLayerHandle g_layers[sizeof(PACK_DIRS)/sizeof(PACK_DIRS[0])+1];
 static int g_numLayers;
 static bool g_crReady;
@@ -309,7 +351,7 @@ static bool loadCode(const char *dir) {
     LOG("game byte verification passed");
 
     uint32_t textBase = be32(&addr[0]), dataBase = be32(&addr[4]);
-    if(addr.size()!=8 || textBase!=0x0F800000 || dataBase!=0x10400020 || code.size()>0x100000 || data.size()>0x100000 || code.size()<4 || (code.size()&3) || be32(code.data()+code.size()-4)!=0x4E800020) {
+    if(addr.size()!=8 || textBase!=0x0F800000 || dataBase!=0x10400020 || code.size()>0x200000 || data.size()>0x100000 || code.size()<4 || (code.size()&3) || be32(code.data()+code.size()-4)!=0x4E800020) {
         LOG("unsupported pack destination or missing log stub");return false;
     }
     code.resize((code.size()+3)&~3u);data.resize((data.size()+3)&~3u);
@@ -372,21 +414,20 @@ static void removeLayers() {
 }
 
 static void addLayers(const char *content) {
-    char target[64], repl[160], skip[40];
-    for (const char *name : PACK_DIRS) {
-        snprintf(skip, sizeof skip, "skip_%s", name);
-        if (flag(skip)) { LOG("layer %s skipped", name); continue; }
-        snprintf(target, sizeof target, "/vol/content/%s", name);
-        snprintf(repl, sizeof repl, "%s/%s", content, name);
-        if (!exists(repl) || !(g_stat.flags&FS_STAT_DIRECTORY)) continue;
-        snprintf(repl, sizeof repl, "fs:%s/%s", content, name);
-        ContentRedirectionStatus st = ContentRedirection_AddFSLayerEx(&g_layers[g_numLayers], name, target, repl, FS_LAYER_TYPE_EX_MERGE_DIRECTORY);
-        LOG("layer %s: %s", name, ContentRedirection_GetStatusStr(st));
-        if (st == CONTENT_REDIRECTION_RESULT_SUCCESS) g_numLayers++;
+    // Do not overlay the AOC mount: v0.22 regressed owned-DLC detection.
+    char target[64],repl[160],skip[40];
+    for(const char *name:PACK_DIRS) {
+        snprintf(skip,sizeof skip,"skip_%s",name);
+        if(flag(skip)){LOG("layer %s skipped",name);continue;}
+        snprintf(target,sizeof target,"/vol/content/%s",name);
+        snprintf(repl,sizeof repl,"%s/%s",content,name);
+        if(!exists(repl) || !(g_stat.flags&FS_STAT_DIRECTORY))continue;
+        snprintf(repl,sizeof repl,"fs:%s/%s",content,name);
+        ContentRedirectionStatus st=ContentRedirection_AddFSLayerEx(&g_layers[g_numLayers],name,target,repl,FS_LAYER_TYPE_EX_MERGE_DIRECTORY);
+        LOG("layer %s target=%s: %s",name,target,ContentRedirection_GetStatusStr(st));
+        if(st==CONTENT_REDIRECTION_RESULT_SUCCESS)g_numLayers++;
     }
-    // Do not add data.cup0 as a root single-file layer. That layer also exposes
-    // it to root-directory enumeration, where the game's resource scanner tries
-    // to load it as a normal resource. The blob reads custom/cup0 instead.
+    // CUP0 stays private; no root layer or DLC mount is added.
 }
 
 static bool checkCup0(const char *content) {
@@ -431,6 +472,7 @@ DEINITIALIZE_PLUGIN() {
 }
 
 ON_APPLICATION_START() {
+    resetCustomFs();
     // Log before filtering: a forwarder/repacked title must not fail silently.
     // No code or content modification is allowed outside the supported MK8 IDs.
     uint64_t tid = OSGetTitleID();
@@ -532,7 +574,8 @@ ON_APPLICATION_START() {
         toast(false,g_stage);
         return;
 #endif
-        LOG("all code copies verified; content layers already checked");
+        g_customFsReady=true;
+        LOG("all code copies verified; content layers already checked; targeted FS routing enabled");
         LOG("CTGP-Cafe code loaded"); toast(false, "code loaded");
         snprintf(g_stage,sizeof g_stage,"CTGP loaded; content layers=%d",g_numLayers);
     }
@@ -540,6 +583,7 @@ ON_APPLICATION_START() {
 }
 
 ON_APPLICATION_ENDS() {
+    g_customFsReady=false;
 #if defined(CTGP_PREFLIGHT_ONLY) || defined(CTGP_CRASH_CAPTURE)
     restoreHandlers();
 #endif

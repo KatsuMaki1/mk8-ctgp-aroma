@@ -209,6 +209,74 @@ playback; telemetry records player, previous/used driver ID and ROB flag.
 Host regression verifies ROB-only override/restoration and native Morton fallback.
 Sixteen Python tests and host fixture pass. R14 boot debug PID30444 launched;
 voice and vehicle-color runtime verification pending. Model41 DTOM remains active.
+
+## R18 prepared: numeric audio bindings and correct icon argument
+
+R17 live horn lookup comparison confirms the unmodified K_SKL event resolves to
+a native SLink record, while new ROBTON events do not exist there. The loaded
+menu bank registry does contain M_ROB; the menu requests pVO_M_ROB_SELECT_CHAR.
+The BARS parameter table still had explicit donor sound IDs: its single menu
+record stored0x1283, while the installed BFSAR maps ROB's menu label to0x12F1.
+Renaming the parameter's string did not update this numeric binding.
+
+`character_voice.bind_bar_ids` now validates the v0x54 BARS directory and rebinds
+the low24 sound ID at each84-byte record+0x24 using the installed BFSAR. R18
+preparation updates81 records across the two private banks; every waveform
+member/name remains byte-identical. Private horn labels use existing MORTON
+sample IDs, while the ROB-only native horn scope requests the existing MOR SLink
+events; the attached ROB bank supplies the authored replacement samples.
+No native Morton bank or global SLink file is changed. Runtime isolation still
+needs testing alongside a real Morton.
+
+Native02557754 receives r6 as pointer-to-driver-ID (confirmed by lwz r11,0(r6)).
+The independent icon wrapper had compared the pointer value to37 and never
+selected the authored black icons. It now dereferences the driver pointer,
+selects the four existing black assets for body IDs0,1,14,23, and uses a donor
+driver pointer for the unsupported-body fallback. Existing extra vehicles still
+chain through the prior vehicle hook. Menu play hook now preserves native r3.
+
+R18 RPX SHA2567d25569bb578a436f0d9c1167e109e5828315d9053bdcb2e3e1659930c91b6cf.
+Seventeen Python tests and expanded host regression pass (all four icons,
+driver pointer fallback, horn event scope, return values, sample preservation).
+Assets staged under work/rob/audio_r18. Installer work/rob/install_r18.py prepared;
+Cemu was observed closed after the closure request; guarded installer succeeded.
+R18 installed as revision `rob_audio_record_binding_and_black_icons`, preserving
+the original rollback. Debug helper PID23280 launched and read-only telemetry
+confirmed R18 mapped, with no new captured boot exception. Awaiting the user's
+menu voice / black roulette icons / race reactions and horn test. No runtime
+audio/icon success claimed yet.
+
+## R19 prepared after R18 feedback
+
+User confirmed voice/black-icon improvements, but normal horn sounds like Morton
+and some kart/glider roulette icons disappear. R18 horn telemetry now resolves
+MOR_ON/OFF/ON_SP to valid SLink records (rather than the prior zero results).
+Comparison against the supplied mod archive shows its normal ON and OFF wave
+payloads are byte-identical to base Morton; only ON_SP is different.
+`authored_normal_horn` reuses the authored ON_SP waveform and its playback
+settings for normal ON, retaining the correct sound ID and filename; OFF is a
+valid silent FWAV release so it cannot play Morton's release sample. Other voice
+waveforms remain untouched. The staged release was decoded and verified all-zero
+PCM. No global Morton asset is modified. Source custom horn waveform SHA256
+7eb98b094d0e02771f826cc4e471947f12481afea58f9788755737afa0bd03a4.
+
+The ROB wrapper now tries validated native resource filenames directly for
+unsupported body/glider icons, while the four authored black icons retain
+priority. `tools/native/rob_vehicle_icons.h` contains36 available stock body and
+all14 glider resources, verified against current menu archive/base/update loose
+assets. Absent B_Zlb and reserved K_A00/K_A01 retain prior native resolution;
+existing added-part IDs39+ still chain through the vehicle module. No source
+asset is invented or replaced. Only ROB uses the direct native fallbacks.
+
+Nineteen Python tests and native host regression pass, including preservation of
+voice payloads/sound IDs, silent release format and standard kart/glider fallback.
+R19 RPX SHA256bdff76dec5712397c615814f4dfa46363c3e2ddc10e7cbd8e028905ec0a514a1.
+Staged audio under work/rob/audio_r19; installer work/rob/install_r19.py prepared.
+After the user confirmed Cemu closure, R19 installed successfully as revision
+`rob_authored_horn_and_native_icon_fallbacks`, with original rollback preserved.
+Debug helper PID7244 launched; telemetry confirms the new module is mapped and
+no new boot exception was captured. Awaiting the user's horn and missing-icon
+test; runtime results are not yet established.
 VS CPU roster inclusion remains unimplemented. Validate cancellation/reselection, preview, normal
 and modded vehicles, player R.O.B. racing alongside CPU Morton, CPU R.O.B., HUD,
 results, sounds and animation fallbacks. Existing costumes must remain functional.

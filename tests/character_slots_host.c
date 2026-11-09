@@ -12,15 +12,17 @@ static void *host_function(u32);
 #define FN(a,t) ((t)host_function(a))
 #define ROB_PRIVATE_VOICE 1
 #include "../tools/native/character_slots.c"
-static u32 memory[0x20000/4],zero,original_names,configured,private_prefix,recipe_id;
+static u32 memory[0x20000/4],zero,engine_word,original_names,configured,private_prefix,recipe_id;
 static char routed_prefix[128];
 static u32 menu_voice_driver;
 void original_char_menu_voice(u32 actor,u32 narrator){(void)narrator;menu_voice_driver=W(actor,0x7c);}
-u32 previous_char_vehicle_icon(u32 o,u32 k,u32 id,u32 d,u32 c){(void)o;(void)k;(void)d;(void)c;return id+100;}
+static u32 fallback_driver;
+u32 previous_char_vehicle_icon(u32 o,u32 k,u32 id,const u32 *d,u32 c){(void)o;(void)k;(void)c;fallback_driver=d?*d:0xffffffffu;return id+100;}
 static u32 *host_word(u32 p,u32 o) {
     u32 address=p+o,base=(u32)(uintptr_t)buttons;
     if(address>=base && address-base<sizeof(buttons))return (u32*)((unsigned char*)buttons+(address-base));
-    if(address==0x1018a18c || address==0x10206328)return &zero;
+    if(address==0x1018a18c)return &engine_word;
+    if(address==0x10206328)return &zero;
     assert(address<sizeof(memory) && !(address&3));return &memory[address/4];
 }
 static unsigned char *host_byte(u32 p,u32 o) {
@@ -37,6 +39,16 @@ static void display_name(u32 page,u32 player,const unsigned short *text){
 static u32 driver_id(u32 driver){return W(driver,0);}
 static u32 player_context(u32 object){(void)object;return 2;}
 static u32 player_index(u32 object){return object;}
+static u32 load_icon(u32 resource,const struct NativeString *name){
+    assert(resource==0x1a400);
+    if(!strcmp(name->text,"ui/cmn/a_menu/timg/ct_ROB_K_Std^q.bflim"))return 0xc001;
+    if(!strcmp(name->text,"ui/cmn/a_menu/timg/ct_ROB_K_Skl^q.bflim"))return 0xc002;
+    if(!strcmp(name->text,"ui/cmn/a_menu/timg/ct_ROB_B_Std^q.bflim"))return 0xc003;
+    if(!strcmp(name->text,"ui/cmn/a_menu/timg/ct_ROB_V_Atv^q.bflim"))return 0xc004;
+    if(!strcmp(name->text,"ui/cmn/a_menu/timg/tc_KP_G_Std_Mtn^q.bflim"))return 0xc100;
+    if(!strcmp(name->text,"tc_KP_K_Ufo^q.bflim"))return 0xc101;
+    return 0;
+}
 static void bind_voice(u32 list,const char *name,u32 heap,u32 a,u32 b){
     assert(!strcmp(name,"ROB"));assert(!heap && !a && !b);W(list,4)++;
 }
@@ -47,6 +59,7 @@ static void format_voice_path(u32 out,const char *format,...){
     if(!strcmp(path,"custom/characters/ROB/driver/ROB.bfres"))final_model_paths++;
 }
 static void *host_function(u32 address){
+    if(address==0x0253d47c)return (void*)load_icon;
     if(address==0x021b6e38)return (void*)player_context;
     if(address==0x02441d48)return (void*)player_index;
     if(address==0x021941a8)return (void*)driver_id;
@@ -68,7 +81,10 @@ void original_char_available(u32 page,u32 *out,const u32 *id){(void)page;*out=*i
 void original_char_button(u32 button,const u32 *id,const u32 *state){(void)state;W(button,0xf8)=*id;configured++;}
 u32 original_char_icon(u32 loader,const u32 *id,u32 variant){(void)loader;assert(!variant);return *id;}
 void original_char_name(u32 page,u32 player,const u32 *id,u32 variant){(void)page;(void)player;(void)id;(void)variant;original_names++;}
-void original_char_sound_lookup(u32 a,u32 o,const char *l){(void)a;(void)o;(void)l;}
+static char sound_label[88];
+u32 original_char_sound_lookup(u32 a,u32 o,const char *l){(void)a;(void)o;if(l)strcpy(sound_label,l);return 0x1234;}
+void original_char_horn_label(u32 a){(void)a;}
+u32 original_char_menu_play(u32 a,const char *l){(void)a;(void)l;return 0x5678;}
 void original_char_audio_init(u32 a){(void)a;}
 void original_char_texture_name(u32 l,u32 out,const u32 *kind,const u32 *id,u32 variant){(void)l;(void)out;(void)kind;(void)id;(void)variant;}
 void original_char_finalise(u32 object,u32 parameters){
@@ -93,7 +109,23 @@ int main(void){
     assert(!strcmp(routed_prefix,"kart/body_tex/"));
     rob_recipe_scope=1;strcpy((char*)memory+0x19000,"BodyB_Jet_Mtn_Alb");character_prefix(0,"kart/body_tex/",0x18f00);
     assert(!strcmp(routed_prefix,"kart/body_tex/"));rob_recipe_scope=0;
-    assert(character_vehicle_icon(0,0,39,37,0)==139);
+    u32 rob_driver=37,morton=28;
+    assert(character_vehicle_icon(0,0,39,&rob_driver,0)==139 && fallback_driver==28);
+    engine_word=0x1a000;W(0x1a000,12)=0x1a100;W(0x1a100,0)=5;W(0x1a100,4)=0x1a200;
+    W(0x1a200,16)=0x1a300;W(0x1a300,4)=0x1a400;
+    assert(character_vehicle_icon(0,0,0,&rob_driver,0)==0xc001);
+    assert(character_vehicle_icon(0,0,1,&rob_driver,0)==0xc002);
+    assert(character_vehicle_icon(0,0,14,&rob_driver,0)==0xc003);
+    assert(character_vehicle_icon(0,0,23,&rob_driver,0)==0xc004);
+    assert(character_vehicle_icon(0,2,0,&rob_driver,0)==0xc100);
+    assert(character_vehicle_icon(0,0,2,&rob_driver,0)==0xc101);
+    assert(character_vehicle_icon(0,0,0,&morton,0)==100 && fallback_driver==28);
+    engine_word=0;
+    horn_for_rob=1;assert(character_sound_lookup(0,0,"pSE_HORN_ROB_ON")==0x1234);
+    assert(!strcmp(sound_label,"pSE_HORN_MOR_ON"));
+    character_sound_lookup(0,0,"pSE_HORN_K_SKL");assert(!strcmp(sound_label,"pSE_HORN_K_SKL"));
+    horn_for_rob=0;character_sound_lookup(0,0,"pSE_HORN_MOR_ON");assert(!strcmp(sound_label,"pSE_HORN_MOR_ON"));
+    assert(character_menu_play(0,"pVO_M_ROB_SELECT_CHAR")==0x5678);
     W(0x16000,0x20c)=0x17000;W(0x17000,0)=28;W(0x16000,0x218)=5;
     character_audio_init(0x16000);assert(W(0x16000,0x218)==5);
     W(0x17000,0)=37;character_audio_init(0x16000);

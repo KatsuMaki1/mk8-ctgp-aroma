@@ -46,7 +46,7 @@ static const struct String *route(const struct String *path,struct String *out) 
             const char *a=p,*b=assets[i].from;
             while(*a && *a==*b) {a++;b++;}
             if(!*a && !*b) {
-                out->text=assets[i].to;out->vtable=path->vtable;sky_redirects++;
+                out->text=assets[i].to;out->vtable=0x100ffbccu;sky_redirects++;
                 return out;
             }
         }

@@ -11,11 +11,12 @@ if(mode=="profile"){
  var textures=f.Textures.Values.Cast<BfresLibrary.WiiU.Texture>().Select(t=>new {t.Name,t.Width,t.Height,t.MipCount,format=t.Format.ToString(),bytes=(t.Data?.Length??0)+(t.MipData?.Length??0)});
  File.WriteAllText(Path.Combine(dir,"profile.json"),JsonSerializer.Serialize(new{shapes,textures},new JsonSerializerOptions{WriteIndented=true}));return;
 }
-if(mode=="export"){
+if(mode=="export"||mode=="dense_export"){
+ bool dense=mode=="dense_export";
  int id=0;var rows=new List<object>();
  foreach(var model in f.Models.Values)foreach(var s in model.Shapes.Values){
   var m=s.Meshes[0];var mat=model.Materials.Values.ElementAt(s.MaterialIndex);int i=id++;
-  if(s.VertexSkinCount!=0||s.Meshes.Count!=1||m.SubMeshes.Count!=1||m.PrimitiveType.ToString()!="Triangles"||m.IndexCount<3000)continue;
+  if(s.VertexSkinCount!=0||(!dense&&(s.Meshes.Count!=1||m.SubMeshes.Count!=1))||(dense&&s.Meshes.Count==1&&m.SubMeshes.Count==1)||m.PrimitiveType.ToString()!="Triangles"||m.IndexCount<3000)continue;
   var h=new VertexBufferHelper(model.VertexBuffers[s.VertexBufferIndex],ByteOrder.BigEndian);
   var p=h["_p0"].Data;WriteFloats(Path.Combine(dir,i+".pos"),p.SelectMany(v=>new[]{v.X,v.Y,v.Z}));
   var ns=new[]{"_n0","_u0","_u1","_c0","_c1"}.Where(n=>h.Attributes.Any(x=>x.Name==n)).ToArray();
@@ -24,7 +25,7 @@ if(mode=="export"){
    w.Write(attrs[j][v].X);w.Write(attrs[j][v].Y);if(ns[j]=="_n0"||ns[j].StartsWith("_c"))w.Write(attrs[j][v].Z);if(ns[j].StartsWith("_c"))w.Write(attrs[j][v].W);
   }
   using(var w=new BinaryWriter(File.Create(Path.Combine(dir,i+".idx"))))foreach(var ix in m.GetIndices())w.Write(ix+m.FirstVertex);
-  rows.Add(new{id=i,model=model.Name,s.Name,material=mat.Name,vertices=p.Length,indices=m.IndexCount,first=m.FirstVertex,buffer_offset=m.IndexBuffer.BufferOffset,index_format=m.IndexFormat.ToString(),stride,attributes=ns});
+  rows.Add(new{id=i,model=model.Name,s.Name,material=mat.Name,vertices=p.Length,indices=m.IndexCount,first=m.FirstVertex,buffer_offset=m.IndexBuffer.BufferOffset,index_format=m.IndexFormat.ToString(),stride,attributes=ns,submeshes=m.SubMeshes.Select(x=>new {offset=x.Offset,count=x.Count}).ToArray()});
  }
  File.WriteAllText(Path.Combine(dir,"meshes.json"),JsonSerializer.Serialize(rows,new JsonSerializerOptions{WriteIndented=true}));
  Console.WriteLine("Exported "+rows.Count+" eligible meshes");return;
@@ -32,15 +33,16 @@ if(mode=="export"){
 if(mode=="textures"){
  var result=new List<object>();int id=0;
  foreach(var tex in f.Textures.Values.Cast<BfresLibrary.WiiU.Texture>()){
-  int i=id++;if(Math.Max(tex.Width,tex.Height)<=512||tex.Depth!=1||tex.ArrayLength>1||tex.Data==null)continue;
+  bool r3=Environment.GetEnvironmentVariable("CTGP_OPT_PROFILE")=="R3";
+  int i=id++;if(Math.Max(tex.Width,tex.Height)<=(r3?256:512)||tex.Depth!=1||tex.ArrayLength>1||tex.Data==null)continue;
   uint cap=tex.Name.ToLower().Contains("bake")||tex.Name.ToLower().Contains("light")||tex.Name.ToLower().Contains("shadow")||tex.Name=="B L"||tex.Name=="b"?2048u:1024u;
   if(a[1].Contains("Gu_DivBowser"))cap=1024;
-  if(Environment.GetEnvironmentVariable("CTGP_OPT_PROFILE")=="R2"){
+  if(Environment.GetEnvironmentVariable("CTGP_OPT_PROFILE")=="R2"||r3){
    string n=tex.Name.ToLower();
    bool readable=new[]{"road","ground","asphalt","logo","sign","arrow","text","start","line","zebra"}.Any(x=>n.Contains(x));
    bool bake=new[]{"bake","light","shadow","aomap"}.Any(x=>n.Contains(x))||n=="b l"||n=="b";
    bool detail=new[]{"_nrm","_spm","normal","specular"}.Any(x=>n.Contains(x));
-   cap=detail?512u:readable||bake?1024u:512u;
+   cap=r3?(readable||bake?512u:256u):(detail?512u:readable||bake?1024u:512u);
   }
   int drop=0;while(Math.Max(tex.Width>>drop,tex.Height>>drop)>cap)drop++;
   if(drop==0)continue;
@@ -68,6 +70,7 @@ if(mode=="verify"){
     var raw=File.ReadAllBytes(p);var expected=Enumerable.Range(0,raw.Length/4).Select(i=>BitConverter.ToUInt32(raw,i*4)-s.Meshes[0].FirstVertex);
     if(!expected.SequenceEqual(t.Meshes[0].GetIndices())||t.Meshes[0].IndexCount!=t.Meshes[0].SubMeshes.Sum(x=>(long)x.Count))throw new Exception("Index roundtrip mismatch");
    }else if(!s.Meshes[0].GetIndices().SequenceEqual(t.Meshes[0].GetIndices()))throw new Exception("Protected shape changed: "+shapePair.Key);
+   for(int lod=1;lod<s.Meshes.Count;lod++)if(!s.Meshes[lod].GetIndices().SequenceEqual(t.Meshes[lod].GetIndices()))throw new Exception("Protected LOD changed: "+shapePair.Key);
   }
  }
  var texdir=Path.Combine(Path.GetDirectoryName(dir),"textures");

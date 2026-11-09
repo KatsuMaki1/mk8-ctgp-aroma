@@ -17,7 +17,7 @@ HOOKS = {
 
 def sha(data): return hashlib.sha256(data).hexdigest()
 
-def compile_module(directory, *, code_address=CODE, data_address=DATA, hooks=HOOKS, source=None, cflags=()):
+def compile_module(directory, *, code_address=CODE, data_address=DATA, hooks=HOOKS, source=None, cflags=(),data_limit=0x1000):
     gcc, nm = patch.compiler_tools()
     assembly = ['.section .text.tramp,"ax",@progbits', '.balign 4']
     for name, (address, word) in hooks.items():
@@ -44,7 +44,7 @@ def compile_module(directory, *, code_address=CODE, data_address=DATA, hooks=HOO
     code=next(s['data'] for s in sections if s['name']=='.text')
     mutable=[s for s in sections if s['name'] in ('.data','.bss') and s['size']]
     end=max(data_address,*[s['addr']+s['size'] for s in mutable]);data=bytearray(end-data_address)
-    if end>data_address+0x1000:raise ValueError('Module state exceeds reservation')
+    if end>data_address+data_limit:raise ValueError('Module state exceeds reservation')
     for s in mutable:
         if s['t']!=8:data[s['addr']-data_address:s['addr']-data_address+len(s['data'])]=s['data']
     return code,bytes(data),symbols

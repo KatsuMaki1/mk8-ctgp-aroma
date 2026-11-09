@@ -52,3 +52,27 @@ under the chat workspace's `work/bolt_cemu_backup`. `install.json` records
 every old/new hash and each newly introduced path. Cemu boot, the new cup
 icons and a race have been observed running. All 48 races and real-console
 behavior remain unverified.
+
+## 2026-11-01: restore a single twelve-cup page
+User reports full WiiU bundle regressed to the original 8+4 layout. Current
+CUP0 confirmed8 type3 +4 type4. tools/bolt_pages.py consolidates all12 into
+(type3,icon0..11), preservescupIDs36..47/all48trackidentities and19othercups.
+Renderer02B13A54 explicitly iterates12 nativebuttons; trackpreview02B137EC
+acceptspositions0..11. Removingtype4 also lowersmaxpage4->3 (no blankpage).
+Importerplacesnowuses12 type3 positions forfutureimports. Icontextures are
+alreadyin ctgp.szs underBolt36..47; noUI/model/code/pluginupdate required.
+Patch outputs/WiiU/Mises_a_jour/WiiU_Boltthunder_One_Page.zip8734bytes,
+onlypaireddata.cup0/custom/cup0+readme. CRCverified; payloadSHA256
+8cad03636ef798612322ab6f7bac24666a349850f25e991b5d8e6cb2647acbd2.
+SourcefullP4/currentCemuCUP0SHA446d4a6a30558a71ed2ee6c1bfb66960995c2f2ae171cf91df856c586db01e19.
+NOTinstalledinCemu (no user closure requested/needed forWiiUpatch). Nextfull
+WiiUbundle MUSTapplybolt_pages.consolidate tosourceCUP0 or useworkspace
+work/bolt_one_page/data.cup0, otherwise it will regress again. Keepv026plugin
+andv024CafeLoadercode; hostdata/iconchecks passed, consolemenu testpending.
+
+Full v026 bundle builder: work/package_aroma_full_v026.py uses current content,
+work/dlc_paths v024 CafeLoader code, exact user-confirmedv026 plugin and
+bolt_pages.consolidate(CUP0) applied at packaging time. Thus both CUP0 aliases
+in the new fullZIP have the single-page layout even though Cemu source content
+was notinstalled/modified. Output CTGP_Aroma_COMPLET_SD_v026_Bolt_1page_2026-11-01.zip.
+Latest plugin matches smallv026ZIP byteforbyte;v022mustnotbereintroduced.

@@ -72,9 +72,14 @@ def animation(data):
     if not changed:raise ValueError('No character transforms')
     return bytes(result)
 
-def replace_archive(data,replacements,additions):
+def replace_archive(data,replacements,additions,aliases=None,addition_alignments=None):
     raw=szs.yaz0_decode(data) if data[:4]==b'Yaz0' else data
     original=assets.hashed_entries(raw)
+    aliases=aliases or {}
+    addition_alignments=addition_alignments or {}
+    if any(not isinstance(a,int) or a<4 or a>65536 or a&(a-1) for a in addition_alignments.values()):
+        raise ValueError('Invalid added resource alignment')
+    if any(h==target or target in aliases for h,target in aliases.items()):raise ValueError('Invalid resource alias chain')
     count=struct.unpack_from('>H',raw,26)[0];off=struct.unpack_from('>I',raw,12)[0]
     old_sfnt=32+count*16;names=raw[old_sfnt:off]
     items={h:(attr,a,b) for h,attr,a,b in struct.iter_unpack('>IIII',raw[32:old_sfnt])}
@@ -84,20 +89,23 @@ def replace_archive(data,replacements,additions):
         h=szs.sarc_hash(name)
         if h in items:raise ValueError('Icon hash already exists')
         items[h]=(0,0,0);all_values[h]=d
+    if not set(aliases)<=set(items) or not set(aliases.values())<=set(items):raise ValueError('Missing resource alias')
     newoff=(32+len(items)*16+len(names)+8191)&~8191
     # Repack once in original physical order. Do not leave dead copies of the
     # replaced layouts/animations in the fixed-budget menu heap.
     blob=bytearray();positions={}
     order=sorted(items,key=lambda h:(h not in original,items[h][1],h))
     for h in order:
+        if h in aliases:continue
         attr,a,b=items[h]
         if h in all_values:payload=all_values[h]
         else:payload=raw[off+a:off+b]
-        alignment=2048 if h not in original else 4
+        alignment=addition_alignments.get(h,2048) if h not in original else 4
         if h in original:
             while alignment<8192 and (off+a)%(alignment*2)==0:alignment*=2
         blob.extend(bytes((-(newoff+len(blob)))%alignment));a=len(blob);blob.extend(payload);b=len(blob)
         positions[h]=(a,b)
+    for h,target in aliases.items():positions[h]=positions[target]
     nodes=bytearray()
     for h,(attr,_,_) in sorted(items.items()):
         a,b=positions[h];nodes.extend(struct.pack('>IIII',h,attr,a,b))
@@ -105,7 +113,7 @@ def replace_archive(data,replacements,additions):
     struct.pack_into('>II',header,8,newoff+len(blob),newoff)
     result=header+nodes+names;result.extend(bytes(newoff-len(result)));result.extend(blob)
     before=assets.hashed_entries(raw);after=assets.hashed_entries(bytes(result))
-    if any(after[h]!=(replacements.get(h,d)) for h,d in before.items()):raise ValueError('Unrelated menu member differs')
+    if any(after[h]!=(replacements.get(aliases.get(h,h),before.get(aliases.get(h,h),d))) for h,d in before.items()):raise ValueError('Unrelated menu member differs')
     return bytes(result)
 
 def prepare(content,staged,output):
